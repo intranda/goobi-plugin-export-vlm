@@ -26,7 +26,7 @@ import de.sub.goobi.config.ConfigPlugins;
 @RunWith(PowerMockRunner.class)
 @PrepareForTest({ ConfigPlugins.class })
 @PowerMockIgnore({ "javax.management.*", "javax.net.ssl.*", "jdk.internal.reflect.*" })
-public class SampleExportPluginTest {
+public class VlmExportPluginTest {
 
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
@@ -63,7 +63,7 @@ public class SampleExportPluginTest {
 
     @Test
     public void testConstructor() {
-        SampleExportPlugin plugin = new SampleExportPlugin();
+        VlmExportPlugin plugin = new VlmExportPlugin();
         assertNotNull(plugin);
     }
 
