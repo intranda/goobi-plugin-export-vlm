@@ -22,6 +22,7 @@ import lombok.Setter;
 import lombok.extern.log4j.Log4j2;
 import net.xeoh.plugins.base.annotations.PluginImplementation;
 import ugh.dl.DigitalDocument;
+import ugh.dl.DocStruct;
 import ugh.dl.Fileformat;
 import ugh.dl.Prefs;
 import ugh.exceptions.DocStructHasNoTypeException;
@@ -78,12 +79,23 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             Fileformat ff = null;
             ff = process.readMetadataFile();
             DigitalDocument dd = ff.getDigitalDocument();
+            DocStruct logical = dd.getLogicalDocStruct();
+            if (logical.getType().isAnchor()) {
+                logical = logical.getAllChildren().get(0);
+            }
+            for (ugh.dl.Metadata md : logical.getAllMetadata()) {
+                if (md.getType().getName().equals("CatalogIDDigital")) {
+                    System.out.println(md.getValue().trim());
+                    break;
+                }
+            }
             VariableReplacer replacer = new VariableReplacer(dd, prefs, process, null);
         } catch (ReadException | PreferencesException | IOException | SwapException e) {
             log.error(e);
             problems.add("Cannot read metadata file.");
             return false;
         }
+
 
         // do a regular export here
         IExportPlugin export = new ExportDms();
