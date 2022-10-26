@@ -10,6 +10,7 @@ import org.goobi.production.enums.PluginType;
 import org.goobi.production.plugin.interfaces.IExportPlugin;
 import org.goobi.production.plugin.interfaces.IPlugin;
 
+import de.schlichtherle.io.File;
 import de.sub.goobi.config.ConfigPlugins;
 import de.sub.goobi.export.dms.ExportDms;
 import de.sub.goobi.helper.VariableReplacer;
@@ -24,6 +25,7 @@ import net.xeoh.plugins.base.annotations.PluginImplementation;
 import ugh.dl.DigitalDocument;
 import ugh.dl.DocStruct;
 import ugh.dl.Fileformat;
+import ugh.dl.Metadata;
 import ugh.dl.Prefs;
 import ugh.exceptions.DocStructHasNoTypeException;
 import ugh.exceptions.MetadataTypeNotAllowedException;
@@ -72,20 +74,27 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         // read information from config file
         String test = ConfigPlugins.getPluginConfig(title).getString("value", "");
         System.out.println("value from configuration file: " + test);
+        String idName = ConfigPlugins.getPluginConfig(title).getString("name", "");
+        String savingPath = ConfigPlugins.getPluginConfig(title).getString("path", "").trim();
+        savingPath = savingPath.equals("") ? "/home/zehong/work/test/vlm_test/" : savingPath;
+        if (!savingPath.endsWith("/")) {
+            savingPath += "/";
+        }
+        String id = ""; // aimed to be ALMA MMS-ID
 
         // read mets file to test if it is readable
         try {
             Prefs prefs = process.getRegelsatz().getPreferences();
-            Fileformat ff = null;
-            ff = process.readMetadataFile();
+            Fileformat ff = process.readMetadataFile();
             DigitalDocument dd = ff.getDigitalDocument();
             DocStruct logical = dd.getLogicalDocStruct();
             if (logical.getType().isAnchor()) {
                 logical = logical.getAllChildren().get(0);
             }
-            for (ugh.dl.Metadata md : logical.getAllMetadata()) {
-                if (md.getType().getName().equals("CatalogIDDigital")) {
-                    System.out.println(md.getValue().trim());
+            for (Metadata md : logical.getAllMetadata()) {
+                if (md.getType().getName().equals(idName)) {
+                    // id found
+                    id = md.getValue().trim();
                     break;
                 }
             }
@@ -94,6 +103,16 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             log.error(e);
             problems.add("Cannot read metadata file.");
             return false;
+        }
+
+        // create a folder named after id
+        if (id == "") {
+            throw new IOException("The <name> part in plugin_intranda_export_vlm.xml cannot be left empty.");
+        }
+        if (createFolder(savingPath + id)) {
+            System.out.println("Success");
+        } else {
+            System.out.println("Something went wrong.");
         }
 
 
@@ -110,5 +129,19 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             log.info("Export executed for process with ID " + process.getId());
         }
         return success;
+    }
+
+    private boolean createFolder(String path) {
+        File directory = new File(path);
+        if (directory.exists()) {
+            System.out.println("Directory already exisits: " + path);
+            return false;
+        } else if (directory.mkdirs()) {
+            System.out.println("Directory created: " + path);
+        } else {
+            System.out.println("Failed to create directory: " + path);
+            return false;
+        }
+        return true;
     }
 }

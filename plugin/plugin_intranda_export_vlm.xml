@@ -2,5 +2,7 @@
  
     <!-- sample parameter -->
     <value>test</value>
+    <name>CatalogIDDigital</name>
+    <path></path>
 
 </config_plugin>
