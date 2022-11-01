@@ -3,6 +3,7 @@
     <!-- sample parameter -->
     <value>test</value>
     <name>CatalogIDDigital</name>
+    <bandname>TitleDocMain</bandname>
     <path></path>
 
 </config_plugin>

@@ -1,6 +1,10 @@
 package de.intranda.goobi.plugins;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -10,10 +14,8 @@ import org.goobi.production.enums.PluginType;
 import org.goobi.production.plugin.interfaces.IExportPlugin;
 import org.goobi.production.plugin.interfaces.IPlugin;
 
-import de.schlichtherle.io.File;
 import de.sub.goobi.config.ConfigPlugins;
 import de.sub.goobi.export.dms.ExportDms;
-import de.sub.goobi.helper.VariableReplacer;
 import de.sub.goobi.helper.exceptions.DAOException;
 import de.sub.goobi.helper.exceptions.ExportFileException;
 import de.sub.goobi.helper.exceptions.SwapException;
@@ -26,7 +28,6 @@ import ugh.dl.DigitalDocument;
 import ugh.dl.DocStruct;
 import ugh.dl.Fileformat;
 import ugh.dl.Metadata;
-import ugh.dl.Prefs;
 import ugh.exceptions.DocStructHasNoTypeException;
 import ugh.exceptions.MetadataTypeNotAllowedException;
 import ugh.exceptions.PreferencesException;
@@ -62,6 +63,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException, SwapException, DAOException,
     TypeNotAllowedForParentException {
         String benutzerHome = process.getProjekt().getDmsImportImagesPath();
+        log.debug("benutzerHome is: " + benutzerHome);
         return startExport(process, benutzerHome);
     }
 
@@ -72,33 +74,48 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         problems = new ArrayList<>();
 
         // read information from config file
+        log.debug("===========================Starting VLM Export =============================");
         String test = ConfigPlugins.getPluginConfig(title).getString("value", "");
-        System.out.println("value from configuration file: " + test);
+        log.debug("value from configuration file: " + test);
+
         String idName = ConfigPlugins.getPluginConfig(title).getString("name", "");
+        if (idName.equals("")) {
+            log.error("The <name> part in plugin_intranda_export_vlm.xml cannot be left empty.");
+            return false;
+        }
+        String bandName = ConfigPlugins.getPluginConfig(title).getString("bandname", "");
         String savingPath = ConfigPlugins.getPluginConfig(title).getString("path", "").trim();
-        savingPath = savingPath.equals("") ? "/home/zehong/work/test/vlm_test/" : savingPath;
+        String masterPath = process.getImagesOrigDirectory(false);
+        log.debug("masterPath is: " + masterPath);
+        savingPath = savingPath.equals("") ? "/home/zehong/work/test/vlm_test/" : savingPath; // TODO: use destination to replace the default directory
         if (!savingPath.endsWith("/")) {
             savingPath += "/";
         }
         String id = ""; // aimed to be ALMA MMS-ID
+        String bandTitle = "";
+        
+        boolean isMonograph = true;
 
         // read mets file to test if it is readable
         try {
-            Prefs prefs = process.getRegelsatz().getPreferences();
+            //            Prefs prefs = process.getRegelsatz().getPreferences();
             Fileformat ff = process.readMetadataFile();
             DigitalDocument dd = ff.getDigitalDocument();
             DocStruct logical = dd.getLogicalDocStruct();
+
+            id = findID(logical, idName);
+
             if (logical.getType().isAnchor()) {
+                isMonograph = false;
                 logical = logical.getAllChildren().get(0);
+                bandTitle = findID(logical, bandName).replace(" ", "_");
             }
-            for (Metadata md : logical.getAllMetadata()) {
-                if (md.getType().getName().equals(idName)) {
-                    // id found
-                    id = md.getValue().trim();
-                    break;
-                }
-            }
-            VariableReplacer replacer = new VariableReplacer(dd, prefs, process, null);
+
+            log.debug("isMonograph = " + isMonograph);
+            log.debug("id = " + id);
+            log.debug("bandTitle = " + bandTitle);
+
+            //            VariableReplacer replacer = new VariableReplacer(dd, prefs, process, null);
         } catch (ReadException | PreferencesException | IOException | SwapException e) {
             log.error(e);
             problems.add("Cannot read metadata file.");
@@ -106,13 +123,54 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         }
 
         // create a folder named after id
-        if (id == "") {
-            throw new IOException("The <name> part in plugin_intranda_export_vlm.xml cannot be left empty.");
+        if (id.equals("")) {
+            log.error("No valid id found. It seems that " + idName + " is not valid.");
+            return false;
         }
-        if (createFolder(savingPath + id)) {
-            System.out.println("Success");
+        savingPath += id;
+        if (createFolder(savingPath)) {
+            // pathMaster := get path to the master folder
+            // if monograph:
+            //      if folder is not empty: 
+            //          warning
+            //      else:
+            //          copy pictures from ${pathMaster} to this new folder
+            // else:
+            //      subfolderName := "T_34_L_" + configured name (e.g. CatalogIDDigital)
+            //      try to create a sub-folder named ${subfolderName}
+            //      if sub-folder successfully created:
+            //          copy pictures from ${pathMaster} into this sub-folder
+            //      else: 
+            //          exception or warning (like "sub-folder" already exists)
+            if (isMonograph) {
+                if (Files.list(Path.of(savingPath)).findFirst().isPresent()) { // if the folder is not empty
+                    log.debug("Warning: the directory: \"" + savingPath + "\" is not empty!");
+                } else {
+                    copyImages(masterPath, savingPath);
+                }
+            } else { // !isMonograph
+                if (bandTitle.equals("")) {
+                    log.error(
+                            "The <bandname> part in plugin_intranda_export_vlm.xml is not supposed to be left empty, since this book is not a monograph. ");
+                } else { // bandTitle != ""
+                    String subfolderName = "T_34_L_" + bandTitle;
+                    log.debug(subfolderName);
+                    savingPath += "/" + subfolderName;
+                    if (createFolder(savingPath)) {
+                        if (Files.list(Path.of(savingPath)).findFirst().isPresent()) {
+                            log.error("The directory: \"" + savingPath + "\" is not empty!");
+                        } else {
+                            copyImages(masterPath, savingPath);
+                        }
+                    } else { // !createFolder(savingPath)
+                        log.error("Something went wrong trying to create the directory: " + savingPath);
+                    }
+                }
+            }
+            
+            log.info("Done.");
         } else {
-            System.out.println("Something went wrong.");
+            log.error("Something went wrong.");
         }
 
 
@@ -134,14 +192,36 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     private boolean createFolder(String path) {
         File directory = new File(path);
         if (directory.exists()) {
-            System.out.println("Directory already exisits: " + path);
-            return false;
+            log.debug("Directory already exisits: " + path);
         } else if (directory.mkdirs()) {
-            System.out.println("Directory created: " + path);
+            log.debug("Directory created: " + path);
         } else {
-            System.out.println("Failed to create directory: " + path);
+            log.debug("Failed to create directory: " + path);
             return false;
         }
         return true;
     }
+    
+    private String findID(DocStruct logical, String idName) {
+        String id = "";
+        for (Metadata md : logical.getAllMetadata()) {
+            if (md.getType().getName().equals(idName)) {
+                // id found
+                id = md.getValue().trim();
+                break;
+            }
+        }
+        return id;
+    }
+
+    private void copyImages(String fromPath, String toPath) throws IOException {
+        log.debug("copy images from \"" + fromPath + "\" to \"" + toPath + "\".");
+        String[] files = new File(fromPath).list();
+        for (String filename : files) {
+            Path originalPath = Paths.get(fromPath + "/" + filename);
+            Path destPath = Paths.get(toPath + "/" + filename);
+            Files.copy(originalPath, destPath);
+        }
+    }
+
 }
