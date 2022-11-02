@@ -5,8 +5,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
@@ -15,7 +15,6 @@ import org.goobi.production.plugin.interfaces.IExportPlugin;
 import org.goobi.production.plugin.interfaces.IPlugin;
 
 import de.sub.goobi.config.ConfigPlugins;
-import de.sub.goobi.export.dms.ExportDms;
 import de.sub.goobi.helper.exceptions.DAOException;
 import de.sub.goobi.helper.exceptions.ExportFileException;
 import de.sub.goobi.helper.exceptions.SwapException;
@@ -39,6 +38,9 @@ import ugh.exceptions.WriteException;
 @Log4j2
 public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
+    private static final long serialVersionUID = 4183263742109935015L;
+    private static final String ABORTION_MESSAGE = "Export aborted for process with ID ";
+    private static final String COMPLETION_MESSAGE = "Export executed for process with ID ";
     @Getter
     private String title = "intranda_export_vlm";
     @Getter
@@ -62,133 +64,118 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     public boolean startExport(Process process) throws IOException, InterruptedException, DocStructHasNoTypeException, PreferencesException,
     WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException, SwapException, DAOException,
     TypeNotAllowedForParentException {
-        String benutzerHome = process.getProjekt().getDmsImportImagesPath();
-        log.debug("benutzerHome is: " + benutzerHome);
-        return startExport(process, benutzerHome);
+        String userHome = process.getProjekt().getDmsImportImagesPath();
+        return startExport(process, userHome);
     }
 
     @Override
     public boolean startExport(Process process, String destination) throws IOException, InterruptedException, DocStructHasNoTypeException,
     PreferencesException, WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException,
     SwapException, DAOException, TypeNotAllowedForParentException {
-        problems = new ArrayList<>();
 
+        log.debug("=============================== Starting VLM Export ===============================");
+
+        log.debug("destination = " + destination);
+        destination = destination.replace("{goobiFolder}", "/opt/digiverso/goobi/").replace("goobi/../", "");
+        log.debug("destination = " + destination);
         // read information from config file
-        log.debug("===========================Starting VLM Export =============================");
-        String test = ConfigPlugins.getPluginConfig(title).getString("value", "");
-        log.debug("value from configuration file: " + test);
-
-        String idName = ConfigPlugins.getPluginConfig(title).getString("name", "");
+        String idName = ConfigPlugins.getPluginConfig(title).getString("idname", "");
         if (idName.equals("")) {
             log.error("The <name> part in plugin_intranda_export_vlm.xml cannot be left empty.");
+            log.error(ABORTION_MESSAGE + process.getId());
             return false;
         }
-        String bandName = ConfigPlugins.getPluginConfig(title).getString("bandname", "");
+        String volumeName = ConfigPlugins.getPluginConfig(title).getString("volumename", "");
         String savingPath = ConfigPlugins.getPluginConfig(title).getString("path", "").trim();
         String masterPath = process.getImagesOrigDirectory(false);
         log.debug("masterPath is: " + masterPath);
-        savingPath = savingPath.equals("") ? "/home/zehong/work/test/vlm_test/" : savingPath; // TODO: use destination to replace the default directory
+        savingPath = savingPath.equals("") ? destination : savingPath;
+        if (!savingPath.startsWith("/")) { // using relative path
+            savingPath = destination + savingPath;
+            log.debug("savingPath = " + savingPath);
+        }
         if (!savingPath.endsWith("/")) {
             savingPath += "/";
         }
-        String id = ""; // aimed to be ALMA MMS-ID
-        String bandTitle = "";
+        String id = ""; // aimed to be the system number, e.g. ALMA MMS-ID
+        String volumeTitle = "";
         
         boolean isMonograph = true;
 
-        // read mets file to test if it is readable
+        // read mets file to get its logical structure
         try {
-            //            Prefs prefs = process.getRegelsatz().getPreferences();
             Fileformat ff = process.readMetadataFile();
             DigitalDocument dd = ff.getDigitalDocument();
             DocStruct logical = dd.getLogicalDocStruct();
 
+            // get the ID
             id = findID(logical, idName);
+            // assure that id is valid
+            if (id.equals("")) {
+                log.error("No valid id found. It seems that " + idName + " is invalid. Recheck it please.");
+                log.error(ABORTION_MESSAGE + process.getId());
+                return false;
+            }
 
+            // get the volumeTitle if the work is composed of several volumes 
             if (logical.getType().isAnchor()) {
                 isMonograph = false;
                 logical = logical.getAllChildren().get(0);
-                bandTitle = findID(logical, bandName).replace(" ", "_");
+                // since this work is not a monograph, we have to assure that it has a valid volumeTitle
+                if (volumeName.equals("")) {
+                    log.error("The <volumeName> part in plugin_intranda_export_vlm.xml cannot be left empty, since this book is not a monograph. ");
+                    log.error(ABORTION_MESSAGE + process.getId());
+                    return false;
+                }
+                volumeTitle = findID(logical, volumeName).replace(" ", "_");
+                if (volumeTitle.equals("")) {
+                    log.error("No valid volumeTitle found. It seems that " + volumeName + " is invalid. Recheck it please.");
+                    log.error(ABORTION_MESSAGE + process.getId());
+                    return false;
+                }
             }
 
             log.debug("isMonograph = " + isMonograph);
             log.debug("id = " + id);
-            log.debug("bandTitle = " + bandTitle);
+            if (!isMonograph) {
+                log.debug("volumeTitle = " + volumeTitle);
+            }
 
-            //            VariableReplacer replacer = new VariableReplacer(dd, prefs, process, null);
         } catch (ReadException | PreferencesException | IOException | SwapException e) {
             log.error(e);
-            problems.add("Cannot read metadata file.");
+            log.error(ABORTION_MESSAGE + process.getId());
             return false;
         }
 
-        // create a folder named after id
-        if (id.equals("")) {
-            log.error("No valid id found. It seems that " + idName + " is not valid.");
-            return false;
-        }
+        // id is already assured valid, let's create a folder named after it
         savingPath += id;
-        if (createFolder(savingPath)) {
-            // pathMaster := get path to the master folder
-            // if monograph:
-            //      if folder is not empty: 
-            //          warning
-            //      else:
-            //          copy pictures from ${pathMaster} to this new folder
-            // else:
-            //      subfolderName := "T_34_L_" + configured name (e.g. CatalogIDDigital)
-            //      try to create a sub-folder named ${subfolderName}
-            //      if sub-folder successfully created:
-            //          copy pictures from ${pathMaster} into this sub-folder
-            //      else: 
-            //          exception or warning (like "sub-folder" already exists)
-            if (isMonograph) {
-                if (Files.list(Path.of(savingPath)).findFirst().isPresent()) { // if the folder is not empty
-                    log.debug("Warning: the directory: \"" + savingPath + "\" is not empty!");
-                } else {
-                    copyImages(masterPath, savingPath);
-                }
-            } else { // !isMonograph
-                if (bandTitle.equals("")) {
-                    log.error(
-                            "The <bandname> part in plugin_intranda_export_vlm.xml is not supposed to be left empty, since this book is not a monograph. ");
-                } else { // bandTitle != ""
-                    String subfolderName = "T_34_L_" + bandTitle;
-                    log.debug(subfolderName);
-                    savingPath += "/" + subfolderName;
-                    if (createFolder(savingPath)) {
-                        if (Files.list(Path.of(savingPath)).findFirst().isPresent()) {
-                            log.error("The directory: \"" + savingPath + "\" is not empty!");
-                        } else {
-                            copyImages(masterPath, savingPath);
-                        }
-                    } else { // !createFolder(savingPath)
-                        log.error("Something went wrong trying to create the directory: " + savingPath);
-                    }
-                }
+        if (!createFolder(savingPath)) {
+            log.error("Something went wrong trying to create the directory: " + savingPath);
+            log.error(ABORTION_MESSAGE + process.getId());
+            return false;
+        }
+        // now we have the root folder, great, let's find out if we need to create subfolders
+        // subfolders are only needed if the book is not a monograph
+        if (isMonograph) {
+            return tryCopy(process, masterPath, savingPath);
+        } else { // !isMonograph
+            // volumeTitle is already assured, let's try to create a subfolder
+            String subfolderName = "T_34_L_" + volumeTitle;
+            savingPath += "/" + subfolderName;
+            if (!createFolder(savingPath)) {
+                log.error("Something went wrong trying to create the directory: " + savingPath);
+                log.error(ABORTION_MESSAGE + process.getId());
+                return false;
             }
-            
-            log.info("Done.");
-        } else {
-            log.error("Something went wrong.");
+            return tryCopy(process, masterPath, savingPath);
         }
-
-
-        // do a regular export here
-        IExportPlugin export = new ExportDms();
-        export.setExportFulltext(true);
-        export.setExportImages(true);
-
-        // execute the export and check the success
-        boolean success = export.startExport(process);
-        if (!success) {
-            log.error("Export aborted for process with ID " + process.getId());
-        } else {
-            log.info("Export executed for process with ID " + process.getId());
-        }
-        return success;
     }
 
+    /**
+     * 
+     * @param path the absolute path as a String
+     * @return true if the folder already exists or is successfully created, false if failure happens.
+     */
     private boolean createFolder(String path) {
         File directory = new File(path);
         if (directory.exists()) {
@@ -196,12 +183,18 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         } else if (directory.mkdirs()) {
             log.debug("Directory created: " + path);
         } else {
-            log.debug("Failed to create directory: " + path);
+            log.error("Failed to create directory: " + path);
             return false;
         }
         return true;
     }
     
+    /**
+     * 
+     * @param logical logical structure of a book as an object of DocStruct
+     * @param idName value of which we want inside "logical"
+     * @return the value of "idName" inside "logical" as String
+     */
     private String findID(DocStruct logical, String idName) {
         String id = "";
         for (Metadata md : logical.getAllMetadata()) {
@@ -214,13 +207,47 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         return id;
     }
 
+    /**
+     * 
+     * @param fromPath absolute path to the source folder as String
+     * @param toPath absolute path to the targeted folder as String
+     * @throws IOException
+     */
     private void copyImages(String fromPath, String toPath) throws IOException {
-        log.debug("copy images from \"" + fromPath + "\" to \"" + toPath + "\".");
+        log.debug("Copy images from \"" + fromPath + "\" to \"" + toPath + "\".");
         String[] files = new File(fromPath).list();
+        if (files.length == 0) {
+            log.debug("There is nothing to copy from \"" + fromPath + "\", it is empty!");
+            return;
+        }
         for (String filename : files) {
             Path originalPath = Paths.get(fromPath + "/" + filename);
             Path destPath = Paths.get(toPath + "/" + filename);
             Files.copy(originalPath, destPath);
+        }
+        log.debug("Images from \"" + fromPath + " are successfully copied to \"" + toPath + "\".");
+    }
+
+    /**
+     * 
+     * @param process
+     * @param fromPath absolute path to the souce folder as String
+     * @param toPath absolute path to the targeted folder as String
+     * @return true if the copy is successfully performed, false otherwise
+     * @throws IOException
+     */
+    private boolean tryCopy(Process process, String fromPath, String toPath) throws IOException {
+        try (Stream<Path> stream = Files.list(Path.of(toPath))) {
+            if (stream.findFirst().isPresent()) { // the folder is not empty
+                log.error("The directory: \"" + toPath + "\" is not empty!");
+                log.error(ABORTION_MESSAGE + process.getId());
+                return false;
+            }
+            // if the folder is empty, great!
+            copyImages(fromPath, toPath);
+            log.info(COMPLETION_MESSAGE + process.getId());
+            log.debug("=============================== Stopping VLM Export ===============================");
+            return true;
         }
     }
 

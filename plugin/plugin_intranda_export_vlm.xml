@@ -1,9 +1,16 @@
 <config_plugin>
- 
-    <!-- sample parameter -->
-    <value>test</value>
-    <name>CatalogIDDigital</name>
-    <bandname>TitleDocMain</bandname>
+ 	<!-- The name of the system, e.g. AlmaIDDigital, AlephIDDigital, CatalogIDDigital.  -->
+ 	<!-- MANDATORY -->
+    <idname>CatalogIDDigital</idname>
+    
+    <!-- The name to be used to distinguish between different volumes of one book series. -->
+    <!-- Alternatively one may also choose "TitleDocMain", just assure its difference between volumes. -->
+    <!-- MANDATORY if the work is not a monograph. -->
+    <volumename>CurrentNoSorting</volumename>
+    
+    <!-- The place you would like to use for the export. -->
+    <!-- If a relative path is given, then it would be appended to /opt/digiverso/viewer/hotfolder/ -->
+    <!-- If left blank, the default path /opt/digiverso/viewer/hotfolder/ would be used. -->
     <path></path>
 
 </config_plugin>
