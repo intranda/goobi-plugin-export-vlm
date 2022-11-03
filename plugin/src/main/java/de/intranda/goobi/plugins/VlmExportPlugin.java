@@ -10,11 +10,13 @@ import java.util.stream.Stream;
 
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
+import org.goobi.production.enums.LogType;
 import org.goobi.production.enums.PluginType;
 import org.goobi.production.plugin.interfaces.IExportPlugin;
 import org.goobi.production.plugin.interfaces.IPlugin;
 
 import de.sub.goobi.config.ConfigPlugins;
+import de.sub.goobi.helper.Helper;
 import de.sub.goobi.helper.exceptions.DAOException;
 import de.sub.goobi.helper.exceptions.ExportFileException;
 import de.sub.goobi.helper.exceptions.SwapException;
@@ -79,20 +81,28 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             return startExport(process);
         }
 
-        log.debug("destination = " + destination);
         destination = destination.replace("{goobiFolder}", "/opt/digiverso/goobi/").replace("goobi/../", "");
         log.debug("destination = " + destination);
         // read information from config file
         String idName = ConfigPlugins.getPluginConfig(title).getString("idname", "");
         if (idName.equals("")) {
-            log.error("The <name> part in plugin_intranda_export_vlm.xml cannot be left empty.");
-            log.error(ABORTION_MESSAGE + process.getId());
+            logBoth(process.getId(), LogType.ERROR, "The \"name\" part in plugin_intranda_export_vlm.xml cannot be left empty.");
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
-        String volumeName = ConfigPlugins.getPluginConfig(title).getString("volumename", "");
-        String savingPath = ConfigPlugins.getPluginConfig(title).getString("path", "").trim();
+
         String masterPath = process.getImagesOrigDirectory(false);
         log.debug("masterPath is: " + masterPath);
+        // assure that the source folder is not empty
+        if (new File(masterPath).list().length == 0) {
+            logBoth(process.getId(), LogType.ERROR, "There is nothing to copy from \"" + masterPath + "\", it is empty!");
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+            return false;
+        }
+
+        String volumeName = ConfigPlugins.getPluginConfig(title).getString("volumename", "");
+        String savingPath = ConfigPlugins.getPluginConfig(title).getString("path", "").trim();
+
         savingPath = savingPath.equals("") ? destination : savingPath;
         if (!savingPath.startsWith("/")) { // using relative path
             savingPath = destination + savingPath;
@@ -101,6 +111,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         if (!savingPath.endsWith("/")) {
             savingPath += "/";
         }
+
         String id = ""; // aimed to be the system number, e.g. ALMA MMS-ID
         String volumeTitle = "";
         
@@ -116,8 +127,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             id = findID(logical, idName);
             // assure that id is valid
             if (id.equals("")) {
-                log.error("No valid id found. It seems that " + idName + " is invalid. Recheck it please.");
-                log.error(ABORTION_MESSAGE + process.getId());
+                logBoth(process.getId(), LogType.ERROR, "No valid id found. It seems that " + idName + " is invalid. Recheck it please.");
+                logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                 return false;
             }
 
@@ -127,14 +138,16 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
                 logical = logical.getAllChildren().get(0);
                 // since this work is not a monograph, we have to assure that it has a valid volumeTitle
                 if (volumeName.equals("")) {
-                    log.error("The <volumeName> part in plugin_intranda_export_vlm.xml cannot be left empty, since this book is not a monograph. ");
-                    log.error(ABORTION_MESSAGE + process.getId());
+                    logBoth(process.getId(), LogType.ERROR,
+                            "The \"volumeName\" part in plugin_intranda_export_vlm.xml cannot be left empty, since this book is not a monograph. ");
+                    logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                     return false;
                 }
                 volumeTitle = findID(logical, volumeName).replace(" ", "_");
                 if (volumeTitle.equals("")) {
-                    log.error("No valid volumeTitle found. It seems that " + volumeName + " is invalid. Recheck it please.");
-                    log.error(ABORTION_MESSAGE + process.getId());
+                    logBoth(process.getId(), LogType.ERROR,
+                            "No valid volumeTitle found. It seems that " + volumeName + " is invalid. Recheck it please.");
+                    logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                     return false;
                 }
             }
@@ -146,16 +159,16 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             }
 
         } catch (ReadException | PreferencesException | IOException | SwapException e) {
-            log.error(e);
-            log.error(ABORTION_MESSAGE + process.getId());
+            logBoth(process.getId(), LogType.ERROR, "Error happened: " + e);
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
 
         // id is already assured valid, let's create a folder named after it
         savingPath += id;
         if (!createFolder(savingPath)) {
-            log.error("Something went wrong trying to create the directory: " + savingPath);
-            log.error(ABORTION_MESSAGE + process.getId());
+            logBoth(process.getId(), LogType.ERROR, "Something went wrong trying to create the directory: " + savingPath);
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
         // now we have the root folder, great, let's find out if we need to create subfolders
@@ -165,8 +178,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             String subfolderName = "T_34_L_" + volumeTitle;
             savingPath += "/" + subfolderName;
             if (!createFolder(savingPath)) {
-                log.error("Something went wrong trying to create the directory: " + savingPath);
-                log.error(ABORTION_MESSAGE + process.getId());
+                logBoth(process.getId(), LogType.ERROR, "Something went wrong trying to create the directory: " + savingPath);
+                logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                 return false;
             }
         }
@@ -219,16 +232,11 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     private void copyImages(String fromPath, String toPath) throws IOException {
         log.debug("Copy images from \"" + fromPath + "\" to \"" + toPath + "\".");
         String[] files = new File(fromPath).list();
-        if (files.length == 0) {
-            log.debug("There is nothing to copy from \"" + fromPath + "\", it is empty!");
-            return;
-        }
         for (String filename : files) {
             Path originalPath = Paths.get(fromPath + "/" + filename);
             Path destPath = Paths.get(toPath + "/" + filename);
             Files.copy(originalPath, destPath);
         }
-        log.debug("Images from \"" + fromPath + " are successfully copied to \"" + toPath + "\".");
     }
 
     /**
@@ -242,15 +250,37 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     private boolean tryCopy(Process process, String fromPath, String toPath) throws IOException {
         try (Stream<Path> stream = Files.list(Path.of(toPath))) {
             if (stream.findFirst().isPresent()) { // the folder is not empty
-                log.error("The directory: \"" + toPath + "\" is not empty!");
-                log.error(ABORTION_MESSAGE + process.getId());
+                logBoth(process.getId(), LogType.ERROR, "The directory: \"" + toPath + "\" is not empty!");
+                logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                 return false;
             }
             // if the folder is empty, great!
             copyImages(fromPath, toPath);
-            log.info(COMPLETION_MESSAGE + process.getId());
+            logBoth(process.getId(), LogType.INFO, "Images from \"" + fromPath + " are successfully copied to \"" + toPath + "\".");
+            logBoth(process.getId(), LogType.INFO, COMPLETION_MESSAGE + process.getId());
             log.debug("=============================== Stopping VLM Export ===============================");
             return true;
+        }
+    }
+
+    /**
+     * 
+     * @param processId
+     * @param logType
+     * @param message message to be shown to both terminal and journal
+     */
+    private void logBoth(int processId, LogType logType, String message) {
+        String logMessage = "VLM Export Plugin: " + message;
+        switch (logType) {
+            case INFO:
+                log.info(logMessage);
+                break;
+            case ERROR:
+                log.error(logMessage);
+                break;
+        }
+        if (processId > 0) {
+            Helper.addMessageToProcessJournal(processId, logType, logMessage);
         }
     }
 
