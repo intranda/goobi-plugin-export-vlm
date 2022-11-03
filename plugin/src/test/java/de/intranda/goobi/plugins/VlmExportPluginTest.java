@@ -1,9 +1,12 @@
 package de.intranda.goobi.plugins;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import org.apache.commons.configuration.ConfigurationException;
@@ -12,6 +15,7 @@ import org.apache.commons.configuration.reloading.FileChangedReloadingStrategy;
 import org.easymock.EasyMock;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -20,12 +24,15 @@ import org.powermock.api.easymock.PowerMock;
 import org.powermock.core.classloader.annotations.PowerMockIgnore;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
+import org.powermock.reflect.internal.WhiteboxImpl;
 
 import de.sub.goobi.config.ConfigPlugins;
+//import de.sub.goobi.mock.MockProcess;
 
 @RunWith(PowerMockRunner.class)
-@PrepareForTest({ ConfigPlugins.class })
+@PrepareForTest({ ConfigPlugins.class, VlmExportPlugin.class })
 @PowerMockIgnore({ "javax.management.*", "javax.net.ssl.*", "jdk.internal.reflect.*" })
+//@SuppressStaticInitialization("")
 public class VlmExportPluginTest {
 
     @Rule
@@ -78,5 +85,44 @@ public class VlmExportPluginTest {
         config.setReloadingStrategy(new FileChangedReloadingStrategy());
         return config;
     }
+    
+    /* Tests for the method startExport(Process, String) */
+    @Ignore
+    @Test
+    public void testStartExportGivenNullAsSecondArgument() throws Exception {
+        //Process process = MockProcess.createProcess();
+        //assertNotNull(process.getProjekt().getDmsImportImagesPath());
+        //VlmExportPlugin plugin = new VlmExportPlugin();
+        //assertEquals(plugin.startExport(process, null), plugin.startExport(process));
+    }
+
+    /*================= Tests for the private methods ================= */
+
+    /* Tests for the method createFolder(String) */
+    @Test
+    public void testCreateFolderGivenEmptyString() throws Exception {
+        VlmExportPlugin plugin = new VlmExportPlugin();
+        assertFalse(WhiteboxImpl.invokeMethod(plugin, "createFolder", ""));
+    }
+
+    @Test
+    public void testCreateFolderGivenExistingPath() throws Exception {
+        VlmExportPlugin plugin = new VlmExportPlugin();
+        assertTrue(Files.exists(Path.of("/tmp")));
+        assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", "/tmp"));
+    }
+
+    @Test
+    public void testCreateFolderGivenUnexistingPath() throws Exception {
+        VlmExportPlugin plugin = new VlmExportPlugin();
+        final String path = "/tmp/unexisting_path";
+        assertFalse(Files.exists(Path.of(path)));
+        assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", path));
+        assertTrue(Files.exists(Path.of(path)));
+        Files.delete(Path.of(path));
+        assertFalse(Files.exists(Path.of(path)));
+    }
+
 
 }
+

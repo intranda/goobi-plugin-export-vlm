@@ -75,6 +75,10 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
         log.debug("=============================== Starting VLM Export ===============================");
 
+        if (destination == null) {
+            return startExport(process);
+        }
+
         log.debug("destination = " + destination);
         destination = destination.replace("{goobiFolder}", "/opt/digiverso/goobi/").replace("goobi/../", "");
         log.debug("destination = " + destination);
@@ -156,9 +160,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         }
         // now we have the root folder, great, let's find out if we need to create subfolders
         // subfolders are only needed if the book is not a monograph
-        if (isMonograph) {
-            return tryCopy(process, masterPath, savingPath);
-        } else { // !isMonograph
+        if (!isMonograph) {
             // volumeTitle is already assured, let's try to create a subfolder
             String subfolderName = "T_34_L_" + volumeTitle;
             savingPath += "/" + subfolderName;
@@ -167,8 +169,9 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
                 log.error(ABORTION_MESSAGE + process.getId());
                 return false;
             }
-            return tryCopy(process, masterPath, savingPath);
         }
+        // if everything went well so far, then we only need to do the copy
+        return tryCopy(process, masterPath, savingPath);
     }
 
     /**
