@@ -6,7 +6,7 @@
   <properties>
     <jar.name>plugin_intranda_export_vlm</jar.name>
     <dest.folder>/opt/digiverso/goobi/plugins/export/</dest.folder>
-    <goobi.version>22.09.3</goobi.version>
+    <goobi.version>22.10</goobi.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
   <distributionManagement>
