@@ -33,7 +33,7 @@ import de.sub.goobi.helper.StorageProvider;
 import de.sub.goobi.mock.MockProcess;
 
 @RunWith(PowerMockRunner.class)
-@PrepareForTest({ ConfigPlugins.class, VlmExportPlugin.class, MockProcess.class, Process.class, StorageProvider.class })
+@PrepareForTest({ ConfigPlugins.class, VlmExportPlugin.class, Process.class, StorageProvider.class })
 @PowerMockIgnore({ "javax.management.*", "javax.net.ssl.*", "jdk.internal.reflect.*" })
 public class VlmExportPluginTest {
 
@@ -44,14 +44,6 @@ public class VlmExportPluginTest {
     private static Path ruleSet;
 
     private static Path defaultGoobiConfig;
-    private static Path metaSource;
-    private static Path metaTarget;
-    private static Path metaAnchorSource;
-    private static Path metaAnchorTarget;
-
-    private Path processDirectory;
-
-    private Process process;
 
     @BeforeClass
     public static void setUpClass() throws Exception {
