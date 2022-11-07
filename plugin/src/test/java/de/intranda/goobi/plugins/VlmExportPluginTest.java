@@ -13,6 +13,7 @@ import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.XMLConfiguration;
 import org.apache.commons.configuration.reloading.FileChangedReloadingStrategy;
 import org.easymock.EasyMock;
+import org.goobi.beans.Process;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
@@ -27,18 +28,30 @@ import org.powermock.modules.junit4.PowerMockRunner;
 import org.powermock.reflect.internal.WhiteboxImpl;
 
 import de.sub.goobi.config.ConfigPlugins;
-//import de.sub.goobi.mock.MockProcess;
+import de.sub.goobi.helper.NIOFileUtils;
+import de.sub.goobi.helper.StorageProvider;
+import de.sub.goobi.mock.MockProcess;
 
 @RunWith(PowerMockRunner.class)
-@PrepareForTest({ ConfigPlugins.class, VlmExportPlugin.class })
+@PrepareForTest({ ConfigPlugins.class, VlmExportPlugin.class, MockProcess.class, Process.class, StorageProvider.class })
 @PowerMockIgnore({ "javax.management.*", "javax.net.ssl.*", "jdk.internal.reflect.*" })
-//@SuppressStaticInitialization("")
 public class VlmExportPluginTest {
 
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
     private File tempFolder;
     private static String resourcesFolder;
+    private static Path ruleSet;
+
+    private static Path defaultGoobiConfig;
+    private static Path metaSource;
+    private static Path metaTarget;
+    private static Path metaAnchorSource;
+    private static Path metaAnchorTarget;
+
+    private Path processDirectory;
+
+    private Process process;
 
     @BeforeClass
     public static void setUpClass() throws Exception {
@@ -47,25 +60,30 @@ public class VlmExportPluginTest {
         if (!Files.exists(Paths.get(resourcesFolder))) {
             resourcesFolder = "target/test-classes/"; // to run mvn test from cli or in jenkins
         }
+        ruleSet = Paths.get(resourcesFolder, "ruleset.xml");
 
         String log4jFile = resourcesFolder + "log4j2.xml"; // for junit tests in eclipse
-
         System.setProperty("log4j.configurationFile", log4jFile);
+
+        Path template = Paths.get(VlmExportPluginTest.class.getClassLoader().getResource(".").getFile());
+
+        defaultGoobiConfig = Paths.get(template.getParent().getParent().toString() + "/src/test/resources/config/goobi_config.properties");
+        if (!Files.exists(defaultGoobiConfig)) {
+            defaultGoobiConfig = Paths.get("target/test-classes/config/goobi_config.properties");
+        }
     }
 
     @Before
     public void setUp() throws Exception {
         tempFolder = folder.newFolder("tmp");
 
-        resourcesFolder = "src/test/resources/"; // for junit tests in eclipse
-
-        if (!Files.exists(Paths.get(resourcesFolder))) {
-            resourcesFolder = "target/test-classes/"; // to run mvn test from cli or in jenkins
-        }
-
         PowerMock.mockStatic(ConfigPlugins.class);
         EasyMock.expect(ConfigPlugins.getPluginConfig(EasyMock.anyString())).andReturn(getConfig()).anyTimes();
         PowerMock.replay(ConfigPlugins.class);
+
+        PowerMock.mockStatic(StorageProvider.class);
+        EasyMock.expect(StorageProvider.getInstance()).andReturn(new NIOFileUtils());
+        PowerMock.replay(StorageProvider.class);
     }
 
     @Test
@@ -90,37 +108,45 @@ public class VlmExportPluginTest {
     @Ignore
     @Test
     public void testStartExportGivenNullAsSecondArgument() throws Exception {
-        //Process process = MockProcess.createProcess();
-        //assertNotNull(process.getProjekt().getDmsImportImagesPath());
+
+        Process process = MockProcess.createProcess();
+
         //VlmExportPlugin plugin = new VlmExportPlugin();
         //assertEquals(plugin.startExport(process, null), plugin.startExport(process));
     }
 
+
     /*================= Tests for the private methods ================= */
 
-    /* Tests for the method createFolder(String) */
     @Test
-    public void testCreateFolderGivenEmptyString() throws Exception {
+    public void testCreateFolderGivenNull() throws Exception {
         VlmExportPlugin plugin = new VlmExportPlugin();
-        assertFalse(WhiteboxImpl.invokeMethod(plugin, "createFolder", ""));
+        assertFalse(WhiteboxImpl.invokeMethod(plugin, "createFolder", null));
+    }
+
+    @Test
+    public void testCreateFolderGivenEmptyPath() throws Exception {
+        VlmExportPlugin plugin = new VlmExportPlugin();
+        assertFalse(WhiteboxImpl.invokeMethod(plugin, "createFolder", Paths.get("")));
     }
 
     @Test
     public void testCreateFolderGivenExistingPath() throws Exception {
         VlmExportPlugin plugin = new VlmExportPlugin();
-        assertTrue(Files.exists(Path.of("/tmp")));
-        assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", "/tmp"));
+        Path temp = Paths.get("/tmp");
+        assertTrue(Files.exists(temp));
+        assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", temp));
     }
 
     @Test
     public void testCreateFolderGivenUnexistingPath() throws Exception {
         VlmExportPlugin plugin = new VlmExportPlugin();
-        final String path = "/tmp/unexisting_path";
-        assertFalse(Files.exists(Path.of(path)));
+        final Path path = Paths.get("/tmp/unexisting_path");
+        assertFalse(Files.exists(path));
         assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", path));
-        assertTrue(Files.exists(Path.of(path)));
-        Files.delete(Path.of(path));
-        assertFalse(Files.exists(Path.of(path)));
+        assertTrue(Files.exists(path));
+        Files.delete(path);
+        assertFalse(Files.exists(path));
     }
 
 

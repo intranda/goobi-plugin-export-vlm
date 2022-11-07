@@ -2,13 +2,11 @@ package de.intranda.goobi.plugins;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.stream.Stream;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
 import org.goobi.production.enums.LogType;
@@ -19,6 +17,7 @@ import org.goobi.production.plugin.interfaces.IPlugin;
 import de.sub.goobi.config.ConfigPlugins;
 import de.sub.goobi.helper.Helper;
 import de.sub.goobi.helper.StorageProvider;
+import de.sub.goobi.helper.StorageProviderInterface;
 import de.sub.goobi.helper.exceptions.DAOException;
 import de.sub.goobi.helper.exceptions.ExportFileException;
 import de.sub.goobi.helper.exceptions.SwapException;
@@ -79,75 +78,36 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
         log.debug("=============================== Starting VLM Export ===============================");
 
-
-        // TODO: What is the destination used for? I think it is not needed.
-        if (destination == null) {
-            return startExport(process);
-        }
-
-        // TODO: never never never write hard coded pathes here. target shall come from config file
-        destination = destination.replace("{goobiFolder}", "/opt/digiverso/goobi/").replace("goobi/../", "");
-        log.debug("destination = " + destination);
+        // destination will not be used
         
-        // TODO: Better use 'fieldIdentifier' instead of 'idname'
-        // read information from config file
-        
-        // TODO: just use the second parameter here if there is really a default to set
-        String idName = ConfigPlugins.getPluginConfig(title).getString("idname", "");
-        // TODO: Better use org.apache.commons.lang.StringUtils.isBlank ... here as it checks for null and empty string
-        if (idName.equals("")) {
-        	// TODO: the parameter is named differently. Just write that the plugin configuration file is incomplete (without filename)
-            logBoth(process.getId(), LogType.ERROR, "The \"name\" part in plugin_intranda_export_vlm.xml cannot be left empty.");
-            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-            return false;
-        }
-
         String masterPath = process.getImagesOrigDirectory(false);
         log.debug("masterPath is: " + masterPath);
         // assure that the source folder is not empty
         if (new File(masterPath).list().length == 0) {
-        	// TODO: Better use single ticks like 'this' - then it is easear to read without double quotation
-            logBoth(process.getId(), LogType.ERROR, "There is nothing to copy from \"" + masterPath + "\", it is empty!");
+            logBoth(process.getId(), LogType.ERROR, "There is nothing to copy from '" + masterPath + "', it is empty!");
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
 
-        // TODO: use a better parameter name here like 'fieldVolume'
-        // TODO: just use the second parameter here if there is really a default to set
-        String volumeName = ConfigPlugins.getPluginConfig(title).getString("volumename", "");
-        // TODO: just use the second parameter here if there is really a default to set
-        // TODO: why do you trim here but never before? 
-        String savingPath = ConfigPlugins.getPluginConfig(title).getString("path", "").trim();
+        // read information from config file
+        String fieldIdentifier = ConfigPlugins.getPluginConfig(title).getString("identifier");
+        String fieldVolume = ConfigPlugins.getPluginConfig(title).getString("volume");
+        String path = ConfigPlugins.getPluginConfig(title).getString("path");
+        String subfolderPrefix = ConfigPlugins.getPluginConfig(title).getString("subfolderPrefix");
 
-        // TODO: why so complicated
-        savingPath = savingPath.equals("") ? destination : savingPath;
-        // TODO: don't do that. simply expect a complete path from config file
-        if (!savingPath.startsWith("/")) { // using relative path
-            savingPath = destination + savingPath;
-            log.debug("savingPath = " + savingPath);
-        }
-        if (!savingPath.endsWith("/")) {
-            savingPath += "/";
+        if (StringUtils.isBlank(fieldIdentifier) || StringUtils.isBlank(fieldVolume) || StringUtils.isBlank(path)
+                || StringUtils.isBlank(subfolderPrefix)) {
+            logBoth(process.getId(), LogType.ERROR, "The configuration file for the VLM export is incomplete.");
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+            return false;
         }
 
-        
-        
-        // if would do this a lot easier
-//        String fieldIdentifier = ConfigPlugins.getPluginConfig(title).getString("fieldIdentifier");
-//        String fieldVolume = ConfigPlugins.getPluginConfig(title).getString("fieldVolume");
-//        String path = ConfigPlugins.getPluginConfig(title).getString("path");
-//        
-//        if (StringUtils.isBlank(fieldIdentifier)  || StringUtils.isBlank(fieldVolume)  || StringUtils.isBlank(path)) {
-//        	  logBoth(process.getId(), LogType.ERROR, "The configuration file for the VLM export is incomplete.");
-//            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-//            return false;
-//        }
-        
+        Path savingPath = Paths.get(path);
         
         String id = ""; // aimed to be the system number, e.g. ALMA MMS-ID
-        String volumeTitle = "";
+        String volumeTitle = ""; // used to distinguish volumes from one another
         
-        boolean isMonograph = true;
+        boolean isOneVolumeWork = true;
 
         // read mets file to get its logical structure
         try {
@@ -156,39 +116,30 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             DocStruct logical = dd.getLogicalDocStruct();
 
             // get the ID
-            id = findID(logical, idName);
+            id = findMetadata(logical, fieldIdentifier);
             // assure that id is valid
-            if (id.equals("")) {
-                logBoth(process.getId(), LogType.ERROR, "No valid id found. It seems that " + idName + " is invalid. Recheck it please.");
+            if (StringUtils.isBlank(id)) {
+                logBoth(process.getId(), LogType.ERROR, "No valid id found. It seems that " + fieldIdentifier + " is invalid. Recheck it please.");
                 logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                 return false;
             }
 
             // get the volumeTitle if the work is composed of several volumes 
             if (logical.getType().isAnchor()) {
-                isMonograph = false;
+                isOneVolumeWork = false;
                 logical = logical.getAllChildren().get(0);
-                // since this work is not a monograph, we have to assure that it has a valid volumeTitle
-                // TODO: Better use StringUtils.isBlank here again
-                if (volumeName.equals("")) {
+                volumeTitle = findMetadata(logical, fieldVolume).replace(" ", "_");
+                if (StringUtils.isBlank(volumeTitle)) {
                     logBoth(process.getId(), LogType.ERROR,
-                            "The \"volumeName\" part in plugin_intranda_export_vlm.xml cannot be left empty, since this book is not a monograph. ");
-                    logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-                    return false;
-                }
-                volumeTitle = findID(logical, volumeName).replace(" ", "_");
-                // TODO: Better use StringUtils.isBlank here again
-                if (volumeTitle.equals("")) {
-                    logBoth(process.getId(), LogType.ERROR,
-                            "No valid volumeTitle found. It seems that " + volumeName + " is invalid. Recheck it please.");
+                            "No valid volumeTitle found. It seems that " + fieldVolume + " is invalid. Recheck it please.");
                     logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                     return false;
                 }
             }
 
-            log.debug("isMonograph = " + isMonograph);
+            log.debug("isOneVolumeWork = " + isOneVolumeWork);
             log.debug("id = " + id);
-            if (!isMonograph) {
+            if (!isOneVolumeWork) {
                 log.debug("volumeTitle = " + volumeTitle);
             }
 
@@ -199,110 +150,121 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         }
 
         // id is already assured valid, let's create a folder named after it
-        savingPath += id;
+        savingPath = savingPath.resolve(id);
         if (!createFolder(savingPath)) {
-            logBoth(process.getId(), LogType.ERROR, "Something went wrong trying to create the directory: " + savingPath);
+            logBoth(process.getId(), LogType.ERROR, "Something went wrong trying to create the directory: " + savingPath.toString());
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
         // now we have the root folder, great, let's find out if we need to create subfolders
-        // subfolders are only needed if the book is not a monograph
-        if (!isMonograph) {
+        // subfolders are only needed if the book is not a one-volume work
+        if (!isOneVolumeWork) {
             // volumeTitle is already assured, let's try to create a subfolder
-            String subfolderName = "T_34_L_" + volumeTitle;
-            // TODO: Don't use / manually. Better use this: https://www.baeldung.com/java-file-vs-file-path-separator
-            savingPath += "/" + subfolderName;
+            String subfolderName = subfolderPrefix + volumeTitle;
+            savingPath = savingPath.resolve(subfolderName);
             if (!createFolder(savingPath)) {
-                logBoth(process.getId(), LogType.ERROR, "Something went wrong trying to create the directory: " + savingPath);
+                logBoth(process.getId(), LogType.ERROR, "Something went wrong trying to create the directory: " + savingPath.toString());
                 logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                 return false;
             }
         }
         // if everything went well so far, then we only need to do the copy
-        return tryCopy(process, masterPath, savingPath);
+        return tryCopy(process, Paths.get(masterPath), savingPath);
     }
 
     /**
      * 
-     * @param path the absolute path as a String
+     * @param path the absolute path of the targeted folder
      * @return true if the folder already exists or is successfully created, false if failure happens.
      */
-    private boolean createFolder(String path) {
-    	// TODO: Better use the StorageProvide for file operations to let it work on all file systems
-//    	StorageProvider.getInstance().createDirectories(null);
-    	
-        File directory = new File(path);
-        if (directory.exists()) {
-            log.debug("Directory already exisits: " + path);
-        } else if (directory.mkdirs()) {
-            log.debug("Directory created: " + path);
-        } else {
-            log.error("Failed to create directory: " + path);
+    private boolean createFolder(Path path) {
+        if (path == null) {
+            log.error("The path provided is null!");
             return false;
         }
-        return true;
+        if (StringUtils.isBlank(path.toString())) {
+            log.error("The path provided is empty!");
+            return false;
+        }
+        StorageProviderInterface provider = StorageProvider.getInstance();
+        if (provider.isFileExists(path)) {
+            log.debug("Directory already exisits: "  + path.toString());
+            return true;
+        }
+        try {
+            provider.createDirectories(path);
+            log.debug("Directory created: " + path.toString());
+            return true;
+        } catch (IOException e) {
+            log.error("Failed to create directory: " + path.toString());
+            return false;
+        }
     }
-    
+
     /**
      * 
      * @param logical logical structure of a book as an object of DocStruct
-     * @param idName value of which we want inside "logical"
-     * @return the value of "idName" inside "logical" as String
+     * @param fieldName value of which we want inside "logical"
+     * @return the value of "fieldName" inside "logical" as String
      */
-    // TODO: it is not really to find an ID, is it? Shouldn't it be better findMetadata?
-    private String findID(DocStruct logical, String idName) {
-        String id = "";
+    private String findMetadata(DocStruct logical, String fieldName) {
+        String fieldValue = "";
         for (Metadata md : logical.getAllMetadata()) {
-            if (md.getType().getName().equals(idName)) {
-                // id found
-                id = md.getValue().trim();
+            if (md.getType().getName().equals(fieldName)) {
+                // field found
+                fieldValue = md.getValue().trim();
                 break;
             }
         }
-        return id;
+        return fieldValue;
     }
 
     /**
      * 
-     * @param fromPath absolute path to the source folder as String
-     * @param toPath absolute path to the targeted folder as String
+     * @param fromPath absolute path to the source folder
+     * @param toPath absolute path to the targeted folder
      * @throws IOException
      */
-    private void copyImages(String fromPath, String toPath) throws IOException {
-        log.debug("Copy images from \"" + fromPath + "\" to \"" + toPath + "\".");
-        String[] files = new File(fromPath).list();
-        for (String filename : files) {
-            Path originalPath = Paths.get(fromPath + "/" + filename);
-            Path destPath = Paths.get(toPath + "/" + filename);
-            Files.copy(originalPath, destPath);
-            // TODO: Better use the StorageProvide for file operations to let it work on all file systems
-//                   StorageProvider.getInstance().copyFile(originalPath, destPath);
-        
+    private void copyImages(Path fromPath, Path toPath) throws IOException {
+        log.debug("Copy images from '" + fromPath.toString() + "' to '" + toPath.toString() + "'.");
+        StorageProviderInterface provider = StorageProvider.getInstance();
+        List<String> files = provider.list(fromPath.toString());
+        for (String file : files) {
+            Path srcPath = fromPath.resolve(file);
+            Path destPath = toPath.resolve(file);
+            provider.copyFile(srcPath, destPath);
         }
     }
 
     /**
      * 
      * @param process
-     * @param fromPath absolute path to the souce folder as String
-     * @param toPath absolute path to the targeted folder as String
+     * @param fromPath absolute path to the souce folder
+     * @param toPath absolute path to the target folder
      * @return true if the copy is successfully performed, false otherwise
      * @throws IOException
      */
-    private boolean tryCopy(Process process, String fromPath, String toPath) throws IOException {
-        try (Stream<Path> stream = Files.list(Path.of(toPath))) {
-            if (stream.findFirst().isPresent()) { // the folder is not empty
-                logBoth(process.getId(), LogType.ERROR, "The directory: \"" + toPath + "\" is not empty!");
-                logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-                return false;
-            }
-            // if the folder is empty, great!
-            copyImages(fromPath, toPath);
-            logBoth(process.getId(), LogType.INFO, "Images from \"" + fromPath + " are successfully copied to \"" + toPath + "\".");
-            logBoth(process.getId(), LogType.INFO, COMPLETION_MESSAGE + process.getId());
-            log.debug("=============================== Stopping VLM Export ===============================");
-            return true;
+    private boolean tryCopy(Process process, Path fromPath, Path toPath) {
+        StorageProviderInterface provider = StorageProvider.getInstance();
+        if (!provider.list(toPath.toString()).isEmpty()) {
+            logBoth(process.getId(), LogType.ERROR, "The directory: '" + toPath.toString() + "' is not empty!");
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+            return false;
         }
+        // if the folder is empty, great!
+        try {
+            copyImages(fromPath, toPath);
+
+        } catch (IOException e) {
+            logBoth(process.getId(), LogType.ERROR,
+                    "Errors happened trying to copy from '" + fromPath.toString() + "' to '" + toPath.toString() + "'.");
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+            return false;
+        }
+        logBoth(process.getId(), LogType.INFO, "Images from '" + fromPath.toString() + "' are successfully copied to '" + toPath.toString() + "'.");
+        logBoth(process.getId(), LogType.INFO, COMPLETION_MESSAGE + process.getId());
+        log.debug("=============================== Stopping VLM Export ===============================");
+        return true;
     }
 
     /**
