@@ -30,7 +30,6 @@ import org.powermock.reflect.internal.WhiteboxImpl;
 import de.sub.goobi.config.ConfigPlugins;
 import de.sub.goobi.helper.NIOFileUtils;
 import de.sub.goobi.helper.StorageProvider;
-import de.sub.goobi.mock.MockProcess;
 
 @RunWith(PowerMockRunner.class)
 @PrepareForTest({ ConfigPlugins.class, VlmExportPlugin.class, Process.class, StorageProvider.class })
@@ -41,7 +40,6 @@ public class VlmExportPluginTest {
     public TemporaryFolder folder = new TemporaryFolder();
     private File tempFolder;
     private static String resourcesFolder;
-    private static Path ruleSet;
 
     private static Path defaultGoobiConfig;
 
@@ -52,7 +50,6 @@ public class VlmExportPluginTest {
         if (!Files.exists(Paths.get(resourcesFolder))) {
             resourcesFolder = "target/test-classes/"; // to run mvn test from cli or in jenkins
         }
-        ruleSet = Paths.get(resourcesFolder, "ruleset.xml");
 
         String log4jFile = resourcesFolder + "log4j2.xml"; // for junit tests in eclipse
         System.setProperty("log4j.configurationFile", log4jFile);
@@ -101,10 +98,6 @@ public class VlmExportPluginTest {
     @Test
     public void testStartExportGivenNullAsSecondArgument() throws Exception {
 
-        Process process = MockProcess.createProcess();
-
-        //VlmExportPlugin plugin = new VlmExportPlugin();
-        //assertEquals(plugin.startExport(process, null), plugin.startExport(process));
     }
 
 
