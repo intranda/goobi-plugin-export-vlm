@@ -8,6 +8,7 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.apache.commons.lang.StringUtils;
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
 import org.goobi.production.enums.LogType;
@@ -17,6 +18,7 @@ import org.goobi.production.plugin.interfaces.IPlugin;
 
 import de.sub.goobi.config.ConfigPlugins;
 import de.sub.goobi.helper.Helper;
+import de.sub.goobi.helper.StorageProvider;
 import de.sub.goobi.helper.exceptions.DAOException;
 import de.sub.goobi.helper.exceptions.ExportFileException;
 import de.sub.goobi.helper.exceptions.SwapException;
@@ -77,15 +79,24 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
         log.debug("=============================== Starting VLM Export ===============================");
 
+
+        // TODO: What is the destination used for? I think it is not needed.
         if (destination == null) {
             return startExport(process);
         }
 
+        // TODO: never never never write hard coded pathes here. target shall come from config file
         destination = destination.replace("{goobiFolder}", "/opt/digiverso/goobi/").replace("goobi/../", "");
         log.debug("destination = " + destination);
+        
+        // TODO: Better use 'fieldIdentifier' instead of 'idname'
         // read information from config file
+        
+        // TODO: just use the second parameter here if there is really a default to set
         String idName = ConfigPlugins.getPluginConfig(title).getString("idname", "");
+        // TODO: Better use org.apache.commons.lang.StringUtils.isBlank ... here as it checks for null and empty string
         if (idName.equals("")) {
+        	// TODO: the parameter is named differently. Just write that the plugin configuration file is incomplete (without filename)
             logBoth(process.getId(), LogType.ERROR, "The \"name\" part in plugin_intranda_export_vlm.xml cannot be left empty.");
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
@@ -95,15 +106,22 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         log.debug("masterPath is: " + masterPath);
         // assure that the source folder is not empty
         if (new File(masterPath).list().length == 0) {
+        	// TODO: Better use single ticks like 'this' - then it is easear to read without double quotation
             logBoth(process.getId(), LogType.ERROR, "There is nothing to copy from \"" + masterPath + "\", it is empty!");
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
 
+        // TODO: use a better parameter name here like 'fieldVolume'
+        // TODO: just use the second parameter here if there is really a default to set
         String volumeName = ConfigPlugins.getPluginConfig(title).getString("volumename", "");
+        // TODO: just use the second parameter here if there is really a default to set
+        // TODO: why do you trim here but never before? 
         String savingPath = ConfigPlugins.getPluginConfig(title).getString("path", "").trim();
 
+        // TODO: why so complicated
         savingPath = savingPath.equals("") ? destination : savingPath;
+        // TODO: don't do that. simply expect a complete path from config file
         if (!savingPath.startsWith("/")) { // using relative path
             savingPath = destination + savingPath;
             log.debug("savingPath = " + savingPath);
@@ -112,6 +130,20 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             savingPath += "/";
         }
 
+        
+        
+        // if would do this a lot easier
+//        String fieldIdentifier = ConfigPlugins.getPluginConfig(title).getString("fieldIdentifier");
+//        String fieldVolume = ConfigPlugins.getPluginConfig(title).getString("fieldVolume");
+//        String path = ConfigPlugins.getPluginConfig(title).getString("path");
+//        
+//        if (StringUtils.isBlank(fieldIdentifier)  || StringUtils.isBlank(fieldVolume)  || StringUtils.isBlank(path)) {
+//        	  logBoth(process.getId(), LogType.ERROR, "The configuration file for the VLM export is incomplete.");
+//            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+//            return false;
+//        }
+        
+        
         String id = ""; // aimed to be the system number, e.g. ALMA MMS-ID
         String volumeTitle = "";
         
@@ -137,6 +169,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
                 isMonograph = false;
                 logical = logical.getAllChildren().get(0);
                 // since this work is not a monograph, we have to assure that it has a valid volumeTitle
+                // TODO: Better use StringUtils.isBlank here again
                 if (volumeName.equals("")) {
                     logBoth(process.getId(), LogType.ERROR,
                             "The \"volumeName\" part in plugin_intranda_export_vlm.xml cannot be left empty, since this book is not a monograph. ");
@@ -144,6 +177,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
                     return false;
                 }
                 volumeTitle = findID(logical, volumeName).replace(" ", "_");
+                // TODO: Better use StringUtils.isBlank here again
                 if (volumeTitle.equals("")) {
                     logBoth(process.getId(), LogType.ERROR,
                             "No valid volumeTitle found. It seems that " + volumeName + " is invalid. Recheck it please.");
@@ -176,6 +210,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         if (!isMonograph) {
             // volumeTitle is already assured, let's try to create a subfolder
             String subfolderName = "T_34_L_" + volumeTitle;
+            // TODO: Don't use / manually. Better use this: https://www.baeldung.com/java-file-vs-file-path-separator
             savingPath += "/" + subfolderName;
             if (!createFolder(savingPath)) {
                 logBoth(process.getId(), LogType.ERROR, "Something went wrong trying to create the directory: " + savingPath);
@@ -193,6 +228,9 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @return true if the folder already exists or is successfully created, false if failure happens.
      */
     private boolean createFolder(String path) {
+    	// TODO: Better use the StorageProvide for file operations to let it work on all file systems
+//    	StorageProvider.getInstance().createDirectories(null);
+    	
         File directory = new File(path);
         if (directory.exists()) {
             log.debug("Directory already exisits: " + path);
@@ -211,6 +249,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @param idName value of which we want inside "logical"
      * @return the value of "idName" inside "logical" as String
      */
+    // TODO: it is not really to find an ID, is it? Shouldn't it be better findMetadata?
     private String findID(DocStruct logical, String idName) {
         String id = "";
         for (Metadata md : logical.getAllMetadata()) {
@@ -236,6 +275,9 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             Path originalPath = Paths.get(fromPath + "/" + filename);
             Path destPath = Paths.get(toPath + "/" + filename);
             Files.copy(originalPath, destPath);
+            // TODO: Better use the StorageProvide for file operations to let it work on all file systems
+//                   StorageProvider.getInstance().copyFile(originalPath, destPath);
+        
         }
     }
 
