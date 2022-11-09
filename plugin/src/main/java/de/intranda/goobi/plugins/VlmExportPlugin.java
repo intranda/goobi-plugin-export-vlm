@@ -6,6 +6,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
+import org.apache.commons.configuration.SubnodeConfiguration;
+import org.apache.commons.configuration.XMLConfiguration;
+import org.apache.commons.configuration.reloading.FileChangedReloadingStrategy;
+import org.apache.commons.configuration.tree.xpath.XPathExpressionEngine;
 import org.apache.commons.lang3.StringUtils;
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
@@ -90,13 +94,13 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         }
 
         // read information from config file
-        String fieldIdentifier = ConfigPlugins.getPluginConfig(title).getString("identifier");
-        String fieldVolume = ConfigPlugins.getPluginConfig(title).getString("volume");
-        String path = ConfigPlugins.getPluginConfig(title).getString("path");
-        String subfolderPrefix = ConfigPlugins.getPluginConfig(title).getString("subfolderPrefix");
+        SubnodeConfiguration config = getConfig(process);
+        String fieldIdentifier = config.getString("identifier");
+        String fieldVolume = config.getString("volume");
+        String path = config.getString("path");
+        String subfolderPrefix = config.getString("subfolderPrefix", "");
 
-        if (StringUtils.isBlank(fieldIdentifier) || StringUtils.isBlank(fieldVolume) || StringUtils.isBlank(path)
-                || StringUtils.isBlank(subfolderPrefix)) {
+        if (StringUtils.isBlank(fieldIdentifier) || StringUtils.isBlank(fieldVolume) || StringUtils.isBlank(path)) {
             logBoth(process.getId(), LogType.ERROR, "The configuration file for the VLM export is incomplete.");
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
@@ -170,6 +174,31 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         }
         // if everything went well so far, then we only need to do the copy
         return tryCopy(process, Paths.get(masterPath), savingPath);
+    }
+
+    /**
+     * 
+     * @param process
+     * @return SubnodeConfiguration object according to the project's name
+     */
+    private SubnodeConfiguration getConfig(Process process) {
+        String projectName = process.getProjekt().getTitel();
+        log.debug("projectName = " + projectName);
+        XMLConfiguration xmlConfig = ConfigPlugins.getPluginConfig(title);
+        xmlConfig.setExpressionEngine(new XPathExpressionEngine());
+        xmlConfig.setReloadingStrategy(new FileChangedReloadingStrategy());
+        SubnodeConfiguration conf = null;
+
+        // order of configuration is:
+        // 1.) project name matches
+        // 2.) project is *
+        try {
+            conf = xmlConfig.configurationAt("//config[./project = '" + projectName + "']");
+        } catch (IllegalArgumentException e) {
+            conf = xmlConfig.configurationAt("//config[./project = '*']");
+        }
+
+        return conf;
     }
 
     /**
