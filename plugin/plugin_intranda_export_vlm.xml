@@ -16,38 +16,43 @@
 		<project>Archive_Project</project>
 		
 		<!-- The name of the system, e.g. AlmaIDDigital, AlephIDDigital, CatalogIDDigital.  -->
-	 	<!-- MANDATORY -->
-	    <identifier>CatalogIDDigital</identifier>
+		<!-- MANDATORY -->
+		<identifier>CatalogIDDigital</identifier>
 	    
-	    <!-- The name to be used to distinguish between different volumes of one book series. -->
-	    <!-- Alternatively one may also choose "TitleDocMain", just assure its difference between volumes. -->
-	    <!-- Leave the default value unchanged if the book is a one-volume work. -->
-	    <!-- MANDATORY -->
-	    <volume>CurrentNoSorting</volume>
+		<!-- The name to be used to distinguish between different volumes of one book series. -->
+		<!-- Alternatively one may also choose "TitleDocMain", just assure its difference between volumes. -->
+		<!-- Leave the default value unchanged if the book is a one-volume work. -->
+		<!-- MANDATORY -->
+		<volume>CurrentNoSorting</volume>
 	    
-	    <!-- The place you would like to use for the export. -->
-	    <!-- Absolute path expected. No difference whether you append the directory separator to the end or not. -->
-	    <!-- MANDATORY -->
-	    <path>/opt/digiverso/viewer/hotfolder/</path>
+		<!-- The place you would like to use for the export. -->
+		<!-- Absolute path expected. No difference whether you append the directory separator '/' to the end or not. -->
+		<!-- If left blank, then the default setting '/opt/digiverso/viewer/hotfolder' will be used. -->
+		<path></path>
 	    
-	    <!-- The prefix you would like to use for subfolders for different volumes. -->
-	    <!-- Leave it blank if no common prefix is needed. -->
-	    <subfolderPrefix>T_34_L_</subfolderPrefix>
+		<!-- The prefix you would like to use for subfolders for different volumes. -->
+		<!-- Leave it blank if no common prefix is needed. -->
+		<subfolderPrefix>T_34_L_</subfolderPrefix>
 	</config>
 	
 	<config>
 		<project>Manuscript_Project</project>		
 		<identifier>CatalogIDDigital</identifier>		
-		<volume>CurrentNoSorting</volume>		
-		<path>/opt/digiverso/viewer/hotfolder</path>
+		<volume>CurrentNoSorting</volume>	
+		<!-- Setting up path using a goobi variable. -->
+		<!-- No difference whether you add a '/' between '}' and '..' or not. -->		
+		<path>{goobiFolder}../viewer/hotfolder/</path>
+		<!-- No common prefix needed. -->
 		<subfolderPrefix></subfolderPrefix>
 	</config>
 	
 	<config>
 		<project>*</project>
 		<identifier>CatalogIDDigital</identifier>
-		<volume>CurrentNoSorting</volume>
-		<path>/opt/digiverso/viewer/hotfolder/</path>
+		<volume>CurrentNoSorting</volume>		
+		<!-- Setting up path using an ABSOLUTE path. -->
+		<path>/opt/digiverso/viewer/hotfolder</path>
+		<!-- No common prefix needed. -->
 		<subfolderPrefix></subfolderPrefix>
 	</config>
 

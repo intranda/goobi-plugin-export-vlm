@@ -22,6 +22,7 @@ import de.sub.goobi.config.ConfigPlugins;
 import de.sub.goobi.helper.Helper;
 import de.sub.goobi.helper.StorageProvider;
 import de.sub.goobi.helper.StorageProviderInterface;
+import de.sub.goobi.helper.VariableReplacer;
 import de.sub.goobi.helper.exceptions.DAOException;
 import de.sub.goobi.helper.exceptions.ExportFileException;
 import de.sub.goobi.helper.exceptions.SwapException;
@@ -34,6 +35,7 @@ import ugh.dl.DigitalDocument;
 import ugh.dl.DocStruct;
 import ugh.dl.Fileformat;
 import ugh.dl.Metadata;
+import ugh.dl.Prefs;
 import ugh.exceptions.DocStructHasNoTypeException;
 import ugh.exceptions.MetadataTypeNotAllowedException;
 import ugh.exceptions.PreferencesException;
@@ -82,8 +84,6 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
         log.debug("=============================== Starting VLM Export ===============================");
 
-        // destination will not be used
-        
         String masterPath = process.getImagesOrigDirectory(false);
         log.debug("masterPath is: " + masterPath);
         // assure that the source folder is not empty
@@ -95,18 +95,29 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
         // read information from config file
         SubnodeConfiguration config = getConfig(process);
+        String path = config.getString("path");
+        // destination will be only used as default value if <path> is not configured
+        // hence we only have to assure that it is not null in that scenario
+        if (StringUtils.isBlank(path)) {
+            log.debug("Target 'path' is not configured, using default settings instead.");
+            if (StringUtils.isBlank(destination)) {
+                log.debug("The parameter 'destination' is invalid, restarting export with default settings.");
+                return startExport(process);
+            }
+            path = destination;
+        }
+
         String fieldIdentifier = config.getString("identifier");
         String fieldVolume = config.getString("volume");
-        String path = config.getString("path");
         String subfolderPrefix = config.getString("subfolderPrefix", "");
 
-        if (StringUtils.isBlank(fieldIdentifier) || StringUtils.isBlank(fieldVolume) || StringUtils.isBlank(path)) {
+        if (StringUtils.isBlank(fieldIdentifier) || StringUtils.isBlank(fieldVolume)) {
             logBoth(process.getId(), LogType.ERROR, "The configuration file for the VLM export is incomplete.");
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
 
-        Path savingPath = Paths.get(path);
+        Path savingPath;
         
         String id = ""; // aimed to be the system number, e.g. ALMA MMS-ID
         String volumeTitle = ""; // used to distinguish volumes from one another
@@ -118,6 +129,13 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             Fileformat ff = process.readMetadataFile();
             DigitalDocument dd = ff.getDigitalDocument();
             DocStruct logical = dd.getLogicalDocStruct();
+            Prefs prefs = process.getRegelsatz().getPreferences();
+            VariableReplacer vp = new VariableReplacer(dd, prefs, process, null);
+
+            // replace Goobi Variables in the path string and get the Path object of it
+            path = vp.replace(path);
+            savingPath = Paths.get(path);
+            log.debug("target path = " + path);
 
             // get the ID
             id = findMetadata(logical, fieldIdentifier);
