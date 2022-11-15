@@ -99,7 +99,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
         // read information from config file
         SubnodeConfiguration config = getConfig(process);
-        String path = config.getString("path");
+        String path = config.getString("path").trim();
         // destination will be used as default value only if <path> is not configured
         // hence we only have to assure that it is not null in that scenario
         if (StringUtils.isBlank(path)) {
@@ -111,9 +111,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             path = destination;
         }
 
-        String fieldIdentifier = config.getString("identifier");
-        String fieldVolume = config.getString("volume");
-        String subfolderPrefix = config.getString("subfolderPrefix", "");
+        String fieldIdentifier = config.getString("identifier").trim();
+        String fieldVolume = config.getString("volume").trim();
 
         if (StringUtils.isBlank(fieldIdentifier) || StringUtils.isBlank(fieldVolume)) {
             logBoth(process.getId(), LogType.ERROR, "The configuration file for the VLM export is incomplete.");
@@ -121,7 +120,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             return false;
         }
 
-        String checksumValidationCommand = config.getString("checksumValidationCommand", "/usr/bin/sha1sum");
+        String subfolderPrefix = config.getString("subfolderPrefix", "").trim();
+        String checksumValidationCommand = config.getString("checksumValidationCommand", "/usr/bin/sha1sum").trim();
 
         Path savingPath;
         
