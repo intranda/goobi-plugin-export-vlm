@@ -1,7 +1,9 @@
 package de.intranda.goobi.plugins;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -63,10 +65,12 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
     @Override
     public void setExportFulltext(boolean arg0) {
+        // will not be used in this plugin
     }
 
     @Override
     public void setExportImages(boolean arg0) {
+        // will not be used in this plugin
     }
 
     @Override
@@ -96,7 +100,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         // read information from config file
         SubnodeConfiguration config = getConfig(process);
         String path = config.getString("path");
-        // destination will be only used as default value if <path> is not configured
+        // destination will be used as default value only if <path> is not configured
         // hence we only have to assure that it is not null in that scenario
         if (StringUtils.isBlank(path)) {
             log.debug("Target 'path' is not configured, using default settings instead.");
@@ -116,6 +120,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
+
+        String checksumValidationCommand = config.getString("checksumValidationCommand", "/usr/bin/sha1sum");
 
         Path savingPath;
         
@@ -191,7 +197,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             }
         }
         // if everything went well so far, then we only need to do the copy
-        return tryCopy(process, Paths.get(masterPath), savingPath);
+        return tryCopy(process, Paths.get(masterPath), savingPath, checksumValidationCommand);
     }
 
     /**
@@ -268,18 +274,63 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
     /**
      * 
-     * @param fromPath absolute path to the source folder
-     * @param toPath absolute path to the targeted folder
+     * @param builder ProcessBuilder specified with a working directory
+     * @param path absolute path to the file whose checksum shall be calculated
+     * @param checksumOption algorithm chosen to perform the checksum checking
+     * @return checksum value of the file as String
      * @throws IOException
      */
-    private void copyImages(Path fromPath, Path toPath) throws IOException {
+    private String getChecksum(ProcessBuilder builder, Path path, String checksumOption) throws IOException {
+        builder.command(checksumOption, path.toString());
+        java.lang.Process p = builder.start();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+        return reader.readLine().split(" ")[0];
+    }
+
+    /**
+     * 
+     * @param fromPath absolute path to the source folder
+     * @param toPath absolute path to the targeted folder
+     * @param checksumOption algorithm chosen to perform the checksum checking
+     * @throws IOException
+     */
+    private void copyImages(Path fromPath, Path toPath, String checksumOption) throws IOException {
         log.debug("Copy images from '" + fromPath.toString() + "' to '" + toPath.toString() + "'.");
         StorageProviderInterface provider = StorageProvider.getInstance();
         List<String> files = provider.list(fromPath.toString());
+
+        ProcessBuilder fromBuilder = new ProcessBuilder();
+        fromBuilder.directory(fromPath.toFile());
+        ProcessBuilder toBuilder = new ProcessBuilder();
+        toBuilder.directory(toPath.toFile());
+
         for (String file : files) {
             Path srcPath = fromPath.resolve(file);
             Path destPath = toPath.resolve(file);
             provider.copyFile(srcPath, destPath);
+
+            // get the checksums of the original file and the copy
+            String fromChecksum = getChecksum(fromBuilder, srcPath, checksumOption);
+            String toChecksum = getChecksum(toBuilder, destPath, checksumOption);
+
+            // compare these two checksums
+            // if they are not equal, then something went wrong during the copy process of this file
+            if (!fromChecksum.equals(toChecksum)) {
+                // retry once
+                provider.deleteFile(destPath);
+                provider.copyFile(srcPath, destPath);
+                toChecksum = getChecksum(toBuilder, destPath, checksumOption);
+                // if still not equal, delete the already copied contents and throw an IOException
+                if (!fromChecksum.equals(toChecksum)) {
+                    log.error("Checksum check failed twice while trying to copy the file: '" + srcPath.toString() + "'");
+                    log.debug("checksum original = " + fromChecksum);
+                    log.debug("checksum after copy = " + toChecksum);
+                    log.debug("Already copied contents will be deleted.");
+                    provider.deleteInDir(toPath);
+                    provider.deleteDir(toPath);
+                    throw new IOException("Checksum check failed twice!");
+                }
+            }
         }
     }
 
@@ -288,10 +339,11 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @param process
      * @param fromPath absolute path to the souce folder
      * @param toPath absolute path to the target folder
+     * @param checksumOption algorithm chosen to perform the checksum checking
      * @return true if the copy is successfully performed, false otherwise
      * @throws IOException
      */
-    private boolean tryCopy(Process process, Path fromPath, Path toPath) {
+    private boolean tryCopy(Process process, Path fromPath, Path toPath, String checksumOption) {
         StorageProviderInterface provider = StorageProvider.getInstance();
         if (!provider.list(toPath.toString()).isEmpty()) {
             logBoth(process.getId(), LogType.ERROR, "The directory: '" + toPath.toString() + "' is not empty!");
@@ -300,7 +352,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         }
         // if the folder is empty, great!
         try {
-            copyImages(fromPath, toPath);
+            copyImages(fromPath, toPath, checksumOption);
 
         } catch (IOException e) {
             logBoth(process.getId(), LogType.ERROR,
