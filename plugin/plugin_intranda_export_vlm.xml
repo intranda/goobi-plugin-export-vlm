@@ -33,20 +33,6 @@
 		<!-- The prefix you would like to use for subfolders for different volumes. -->
 		<!-- Leave it blank if no common prefix is needed. -->
 		<subfolderPrefix>T_34_L_</subfolderPrefix>
-		
-		<!-- Choice of application to perform the checksum validation. -->
-		<!-- Absolute path expected. -->
-		<!-- Options are:
-		1.) /usr/bin/sha1sum
-		2.) /usr/bin/sha224sum
-		3.) /usr/bin/sha256sum
-		4.) /usr/bin/sha384sum
-		5.) /usr/bin/sha512sum
-		6.) /usr/bin/shasum
-		7.) /usr/bin/md5sum
-		 -->
-		 <!-- If left blank, then 1.) will be used as the default setting. -->
-		<checksumValidationCommand></checksumValidationCommand>
 	</config>
 	
 	<config>
@@ -58,7 +44,6 @@
 		<path>{goobiFolder}../viewer/hotfolder/</path>
 		<!-- No common prefix needed. -->
 		<subfolderPrefix></subfolderPrefix>
-		<checksumValidationCommand>/usr/bin/md5sum</checksumValidationCommand>
 	</config>
 	
 	<config>
@@ -69,7 +54,6 @@
 		<path>/opt/digiverso/viewer/hotfolder</path>
 		<!-- No common prefix needed. -->
 		<subfolderPrefix></subfolderPrefix>
-		<checksumValidationCommand>/usr/bin/sha1sum</checksumValidationCommand>
 	</config>
 
 </config_plugin>

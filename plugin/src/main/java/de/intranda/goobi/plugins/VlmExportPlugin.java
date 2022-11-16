@@ -1,13 +1,13 @@
 package de.intranda.goobi.plugins;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.configuration.SubnodeConfiguration;
 import org.apache.commons.configuration.XMLConfiguration;
 import org.apache.commons.configuration.reloading.FileChangedReloadingStrategy;
@@ -113,15 +113,13 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
         String fieldIdentifier = config.getString("identifier").trim();
         String fieldVolume = config.getString("volume").trim();
+        String subfolderPrefix = config.getString("subfolderPrefix", "").trim();
 
         if (StringUtils.isBlank(fieldIdentifier) || StringUtils.isBlank(fieldVolume)) {
             logBoth(process.getId(), LogType.ERROR, "The configuration file for the VLM export is incomplete.");
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
-
-        String subfolderPrefix = config.getString("subfolderPrefix", "").trim();
-        String checksumValidationCommand = config.getString("checksumValidationCommand", "/usr/bin/sha1sum").trim();
 
         Path savingPath;
         
@@ -197,7 +195,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             }
         }
         // if everything went well so far, then we only need to do the copy
-        return tryCopy(process, Paths.get(masterPath), savingPath, checksumValidationCommand);
+        return tryCopy(process, Paths.get(masterPath), savingPath);
     }
 
     /**
@@ -274,35 +272,15 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
     /**
      * 
-     * @param builder ProcessBuilder specified with a working directory
-     * @param path absolute path to the file whose checksum shall be calculated
-     * @param checksumOption algorithm chosen to perform the checksum checking
-     * @return checksum value of the file as String
-     * @throws IOException
-     */
-    private String getChecksum(ProcessBuilder builder, Path path, String checksumOption) throws IOException {
-        builder.command(checksumOption, path.toString());
-        java.lang.Process p = builder.start();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
-        return reader.readLine().split(" ")[0];
-    }
-
-    /**
-     * 
      * @param fromPath absolute path to the source folder
      * @param toPath absolute path to the targeted folder
      * @param checksumOption algorithm chosen to perform the checksum checking
      * @throws IOException
      */
-    private void copyImages(Path fromPath, Path toPath, String checksumOption) throws IOException {
+    private void copyImages(Path fromPath, Path toPath) throws IOException {
         log.debug("Copy images from '" + fromPath.toString() + "' to '" + toPath.toString() + "'.");
         StorageProviderInterface provider = StorageProvider.getInstance();
         List<String> files = provider.list(fromPath.toString());
-
-        ProcessBuilder fromBuilder = new ProcessBuilder();
-        fromBuilder.directory(fromPath.toFile());
-        ProcessBuilder toBuilder = new ProcessBuilder();
-        toBuilder.directory(toPath.toFile());
 
         for (String file : files) {
             Path srcPath = fromPath.resolve(file);
@@ -310,8 +288,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             provider.copyFile(srcPath, destPath);
 
             // get the checksums of the original file and the copy
-            String fromChecksum = getChecksum(fromBuilder, srcPath, checksumOption);
-            String toChecksum = getChecksum(toBuilder, destPath, checksumOption);
+            String fromChecksum = DigestUtils.sha256Hex(Files.newInputStream(srcPath));
+            String toChecksum = DigestUtils.sha256Hex(Files.newInputStream(destPath));
 
             // compare these two checksums
             // if they are not equal, then something went wrong during the copy process of this file
@@ -319,7 +297,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
                 // retry once
                 provider.deleteFile(destPath);
                 provider.copyFile(srcPath, destPath);
-                toChecksum = getChecksum(toBuilder, destPath, checksumOption);
+                toChecksum = DigestUtils.sha256Hex(Files.newInputStream(destPath));
                 // if still not equal, delete the already copied contents and throw an IOException
                 if (!fromChecksum.equals(toChecksum)) {
                     log.error("Checksum check failed twice while trying to copy the file: '" + srcPath.toString() + "'");
@@ -343,7 +321,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @return true if the copy is successfully performed, false otherwise
      * @throws IOException
      */
-    private boolean tryCopy(Process process, Path fromPath, Path toPath, String checksumOption) {
+    private boolean tryCopy(Process process, Path fromPath, Path toPath) {
         StorageProviderInterface provider = StorageProvider.getInstance();
         if (!provider.list(toPath.toString()).isEmpty()) {
             logBoth(process.getId(), LogType.ERROR, "The directory: '" + toPath.toString() + "' is not empty!");
@@ -352,7 +330,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         }
         // if the folder is empty, great!
         try {
-            copyImages(fromPath, toPath, checksumOption);
+            copyImages(fromPath, toPath);
 
         } catch (IOException e) {
             logBoth(process.getId(), LogType.ERROR,
@@ -375,11 +353,17 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     private void logBoth(int processId, LogType logType, String message) {
         String logMessage = "VLM Export Plugin: " + message;
         switch (logType) {
-            case INFO:
-                log.info(logMessage);
-                break;
             case ERROR:
                 log.error(logMessage);
+                break;
+            case DEBUG:
+                log.debug(logMessage);
+                break;
+            case WARN:
+                log.warn(logMessage);
+                break;
+            default: // INFO
+                log.info(logMessage);
                 break;
         }
         if (processId > 0) {
