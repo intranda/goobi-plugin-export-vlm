@@ -274,7 +274,6 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * 
      * @param fromPath absolute path to the source folder
      * @param toPath absolute path to the targeted folder
-     * @param checksumOption algorithm chosen to perform the checksum checking
      * @throws IOException
      */
     private void copyImages(Path fromPath, Path toPath) throws IOException {
@@ -317,7 +316,6 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @param process
      * @param fromPath absolute path to the souce folder
      * @param toPath absolute path to the target folder
-     * @param checksumOption algorithm chosen to perform the checksum checking
      * @return true if the copy is successfully performed, false otherwise
      * @throws IOException
      */
