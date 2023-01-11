@@ -33,6 +33,26 @@
 		<!-- The prefix you would like to use for subfolders for different volumes. -->
 		<!-- Leave it blank if no common prefix is needed. -->
 		<subfolderPrefix>T_34_L_</subfolderPrefix>
+		
+		<!-- Whether or not use SFTP for the export. -->
+		<!-- If true then use SFTP. If false then perform local export. -->
+		<!-- If left blank, then the default setting 'false' will be used. -->
+		<sftp>true</sftp>
+		
+		<!-- Absolute path to the location of the file 'known_hosts'. -->
+		<!-- If left blank, then the default setting '{user.home}/.ssh/known_hosts' will be used. -->
+		<knownHosts></knownHosts>
+		
+		<!-- User name at the remote host. -->
+		<!-- MANDATORY if sftp is set to be true. -->
+		<username>CHANGE_ME</username>
+		
+		<!-- Name of the remote host. -->
+		<!-- MANDATORY if sftp is set to be true. -->
+		<hostname>CHANGE_ME</hostname>
+		
+		<!-- Password to log into the remote host 'username'@'hostname'. -->
+		<password>CHANGE_ME</password>
 	</config>
 	
 	<config>
@@ -44,6 +64,14 @@
 		<path>{goobiFolder}../viewer/hotfolder/</path>
 		<!-- No common prefix needed. -->
 		<subfolderPrefix></subfolderPrefix>
+		
+		<sftp>false</sftp>
+		<!-- Use the default setting '{user.home}/.ssh/known_hosts'. -->
+		<knownHosts></knownHosts>
+		
+		<username></username>
+		<hostname></hostname>
+		<password></password>
 	</config>
 	
 	<config>
@@ -54,6 +82,15 @@
 		<path>/opt/digiverso/viewer/hotfolder</path>
 		<!-- No common prefix needed. -->
 		<subfolderPrefix></subfolderPrefix>
+		
+		<!-- Use the default setting 'false'. -->
+		<sftp></sftp>
+		<!-- Use the default setting '{user.home}/.ssh/known_hosts'. -->
+		<knownHosts></knownHosts>
+		
+		<username></username>
+		<hostname></hostname>
+		<password></password>
 	</config>
 
 </config_plugin>

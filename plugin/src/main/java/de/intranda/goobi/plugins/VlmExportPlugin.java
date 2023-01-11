@@ -13,12 +13,19 @@ import org.apache.commons.configuration.XMLConfiguration;
 import org.apache.commons.configuration.reloading.FileChangedReloadingStrategy;
 import org.apache.commons.configuration.tree.xpath.XPathExpressionEngine;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.poi.util.StringUtil;
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
 import org.goobi.production.enums.LogType;
 import org.goobi.production.enums.PluginType;
 import org.goobi.production.plugin.interfaces.IExportPlugin;
 import org.goobi.production.plugin.interfaces.IPlugin;
+
+import com.jcraft.jsch.ChannelSftp;
+import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.JSchException;
+import com.jcraft.jsch.Session;
+import com.jcraft.jsch.SftpException;
 
 import de.sub.goobi.config.ConfigPlugins;
 import de.sub.goobi.helper.Helper;
@@ -62,6 +69,12 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
     @Getter
     private List<String> problems;
+
+    private transient ChannelSftp sftpChannel;
+    private String knownHosts;
+    private String username;
+    private String hostname;
+    private String password;
 
     @Override
     public void setExportFulltext(boolean arg0) {
@@ -175,9 +188,37 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             return false;
         }
 
+        // prepare sftpChannel if necessary
+        boolean useSftp = config.getBoolean("sftp", false);
+        if (useSftp) {
+            username = config.getString("username").trim();
+            hostname = config.getString("hostname").trim();
+            password = config.getString("password").trim();
+
+            if (StringUtil.isBlank(username) || StringUtil.isBlank(hostname)) {
+                logBoth(process.getId(), LogType.ERROR, "The configuration file for the VLM export is incomplete.");
+                logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+                return false;
+            }
+
+            knownHosts = config.getString("knownHosts").trim();
+            if (StringUtil.isBlank(knownHosts)) {
+                knownHosts = System.getProperty("user.home").concat("/.ssh/known_hosts");
+            }
+            log.debug("knownHosts = " + knownHosts);
+
+            try {
+                sftpChannel = setupJSch();
+                sftpChannel.connect();
+            } catch (JSchException e) {
+                log.debug("failed to initialize sftpChannel");
+                return false;
+            }
+        }
+
         // id is already assured valid, let's create a folder named after it
         savingPath = savingPath.resolve(id);
-        if (!createFolder(savingPath)) {
+        if (!createFolder(useSftp, savingPath)) {
             logBoth(process.getId(), LogType.ERROR, "Something went wrong trying to create the directory: " + savingPath.toString());
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
@@ -188,14 +229,14 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             // volumeTitle is already assured, let's try to create a subfolder
             String subfolderName = subfolderPrefix + volumeTitle;
             savingPath = savingPath.resolve(subfolderName);
-            if (!createFolder(savingPath)) {
+            if (!createFolder(useSftp, savingPath)) {
                 logBoth(process.getId(), LogType.ERROR, "Something went wrong trying to create the directory: " + savingPath.toString());
                 logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                 return false;
             }
         }
         // if everything went well so far, then we only need to do the copy
-        return tryCopy(process, Paths.get(masterPath), savingPath);
+        return tryCopy(process, Paths.get(masterPath), savingPath, useSftp);
     }
 
     /**
@@ -225,10 +266,11 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
     /**
      * 
-     * @param path the absolute path of the targeted folder
-     * @return true if the folder already exists or is successfully created, false if failure happens.
+     * @param useSftp true if use SFTP, false otherwise
+     * @param path absolute path of the target folder
+     * @return true if the folder already exists or is successfully created, false if failure happened.
      */
-    private boolean createFolder(Path path) {
+    private boolean createFolder(boolean useSftp, Path path) {
         if (path == null) {
             log.error("The path provided is null!");
             return false;
@@ -237,19 +279,76 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             log.error("The path provided is empty!");
             return false;
         }
+        try {
+            return useSftp ? createFolderSftp(path) : createFolderLocal(path);
+        } catch (SftpException e) {
+            log.error("Failed to create directory remotely: " + path.toString());
+            return false;
+        }
+    }
+
+    /**
+     * 
+     * @param path absolute path of the target folder
+     * @return true if the folder already exists or is successfully created, false if failure happened.
+     */
+    private boolean createFolderLocal(Path path) {
         StorageProviderInterface provider = StorageProvider.getInstance();
         if (provider.isFileExists(path)) {
-            log.debug("Directory already exisits: "  + path.toString());
+            log.debug("Directory already exisits locally: " + path.toString());
             return true;
         }
         try {
             provider.createDirectories(path);
-            log.debug("Directory created: " + path.toString());
+            log.debug("Directory created locally: " + path.toString());
             return true;
         } catch (IOException e) {
-            log.error("Failed to create directory: " + path.toString());
+            log.error("Failed to create directory locally: " + path.toString());
             return false;
         }
+    }
+
+    /**
+     * 
+     * @param path absolute path of the target folder
+     * @return true if the folder already exists or is successfully created, false if failure happened.
+     * @throws SftpException
+     */
+    private boolean createFolderSftp(Path path) throws SftpException {
+        sftpChannel.cd("/");
+        log.debug("pwd = " + sftpChannel.pwd());
+
+        boolean directoryCreated = false;
+        String pathString = path.toString();
+        String[] folders = pathString.split("/");
+        for (String folder : folders) {
+            if (folder.equals(".") || folder.equals("..")) {
+                sftpChannel.cd(folder);
+                continue;
+            }
+            if (folder.length() > 0 && !folder.contains(".")) { // avoid creating hidden folders
+                // this is a valid folder
+                try {
+                    sftpChannel.cd(folder);
+                    log.debug("pwd = " + sftpChannel.pwd());
+                } catch (SftpException e) {
+                    // no such folder yet, hence try to create it first
+                    sftpChannel.mkdir(folder);
+                    log.debug("folder created: " + folder);
+                    sftpChannel.cd(folder);
+                    log.debug("pwd = " + sftpChannel.pwd());
+                    directoryCreated = true;
+                }
+            }
+        }
+        // check if the directory is successfully created
+        if (sftpChannel.ls(pathString).size() >= 2) { // because of the existence of `.` and `..` in empty folders
+            String temp = directoryCreated ? "Directory created remotely: " : "Directory already exisits remotely: ";
+            log.debug(temp + path.toString());
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -272,11 +371,89 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
     /**
      * 
+     * @param process
      * @param fromPath absolute path to the source folder
-     * @param toPath absolute path to the targeted folder
+     * @param toPath absolute path to the target folder
+     * @param useSftp true if use SFTP, false otherwise
+     * @return true if the copy is successfully performed, false otherwise
+     */
+    private boolean tryCopy(Process process, Path fromPath, Path toPath, boolean useSftp) {
+        try {
+            return useSftp ? tryCopySftp(process, fromPath, toPath) : tryCopyLocal(process, fromPath, toPath);
+        } finally {
+            sftpChannel.exit();
+            log.debug("=============================== Stopping VLM Export ===============================");
+        }
+    }
+
+    /**
+     * 
+     * @param process
+     * @param fromPath absolute path to the source folder
+     * @param toPath absolute path to the target folder
+     * @return true if the copy is successfully performed, false otherwise
+     */
+    private boolean tryCopyLocal(Process process, Path fromPath, Path toPath) {
+        StorageProviderInterface provider = StorageProvider.getInstance();
+        if (!provider.list(toPath.toString()).isEmpty()) {
+            logBoth(process.getId(), LogType.ERROR, "The directory: '" + toPath.toString() + "' is not empty!");
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+            return false;
+        }
+        // if the folder is empty, great!
+        try {
+            copyImagesLocal(fromPath, toPath);
+
+        } catch (IOException e) {
+            logBoth(process.getId(), LogType.ERROR,
+                    "Errors happened trying to copy from '" + fromPath.toString() + "' to '" + toPath.toString() + "'.");
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+            return false;
+        }
+        logBoth(process.getId(), LogType.INFO, "Images from '" + fromPath.toString() + "' are successfully copied to '" + toPath.toString() + "'.");
+        logBoth(process.getId(), LogType.INFO, COMPLETION_MESSAGE + process.getId());
+        return true;
+    }
+
+    /**
+     * 
+     * @param process
+     * @param fromPath absolute path to the source folder
+     * @param toPath absolute path to the target folder
+     * @return true if the copy is successfully performed, false otherwise
+     */
+    private boolean tryCopySftp(Process process, Path fromPath, Path toPath) {
+        log.debug("Copy images from '" + fromPath.toString() + "' to '" + username + "@" + hostname + ":" + toPath.toString() + "'.");
+        try {
+            // check if the targeted directory is empty:
+            if (sftpChannel.ls(toPath.toString()).size() > 2) { // because of the existence of `.` and `..` in empty folders
+                logBoth(process.getId(), LogType.ERROR, "The directory: '" + toPath.toString() + "' is not empty!");
+                logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+                return false;
+            }
+            // if the folder is empty, great!
+            copyImagesSftp(fromPath, toPath);
+
+        } catch (SftpException e) {
+            logBoth(process.getId(), LogType.ERROR,
+                    "Errors happened trying to copy from '" + fromPath.toString() + "' to '" + username + "@" + hostname + ":" + toPath.toString()
+                            + "'.");
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+            return false;
+        }
+        logBoth(process.getId(), LogType.INFO, "Images from '" + fromPath.toString() + "' are successfully copied to '" + username + "@" + hostname
+                + ":" + toPath.toString() + "'.");
+        logBoth(process.getId(), LogType.INFO, COMPLETION_MESSAGE + process.getId());
+        return true;
+    }
+
+    /**
+     * 
+     * @param fromPath absolute path to the source folder
+     * @param toPath absolute path to the target folder
      * @throws IOException
      */
-    private void copyImages(Path fromPath, Path toPath) throws IOException {
+    private void copyImagesLocal(Path fromPath, Path toPath) throws IOException {
         log.debug("Copy images from '" + fromPath.toString() + "' to '" + toPath.toString() + "'.");
         StorageProviderInterface provider = StorageProvider.getInstance();
         List<String> files = provider.list(fromPath.toString());
@@ -312,34 +489,20 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     }
 
     /**
-     * 
-     * @param process
-     * @param fromPath absolute path to the souce folder
+     * @param fromPath absolute path to the source folder
      * @param toPath absolute path to the target folder
-     * @return true if the copy is successfully performed, false otherwise
-     * @throws IOException
      */
-    private boolean tryCopy(Process process, Path fromPath, Path toPath) {
+    private void copyImagesSftp(Path fromPath, Path toPath) throws SftpException {
+        log.debug("Copy images from '" + fromPath.toString() + "' to '" + username + "@" + hostname + ":" + toPath.toString() + "'.");
         StorageProviderInterface provider = StorageProvider.getInstance();
-        if (!provider.list(toPath.toString()).isEmpty()) {
-            logBoth(process.getId(), LogType.ERROR, "The directory: '" + toPath.toString() + "' is not empty!");
-            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-            return false;
+        List<String> files = provider.list(fromPath.toString());
+        for (String file : files) {
+            Path srcPath = fromPath.resolve(file);
+            Path destPath = toPath.resolve(file);
+            sftpChannel.put(srcPath.toString(), destPath.toString());
         }
-        // if the folder is empty, great!
-        try {
-            copyImages(fromPath, toPath);
 
-        } catch (IOException e) {
-            logBoth(process.getId(), LogType.ERROR,
-                    "Errors happened trying to copy from '" + fromPath.toString() + "' to '" + toPath.toString() + "'.");
-            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-            return false;
-        }
-        logBoth(process.getId(), LogType.INFO, "Images from '" + fromPath.toString() + "' are successfully copied to '" + toPath.toString() + "'.");
-        logBoth(process.getId(), LogType.INFO, COMPLETION_MESSAGE + process.getId());
-        log.debug("=============================== Stopping VLM Export ===============================");
-        return true;
+        // TODO: checksum checking
     }
 
     /**
@@ -368,5 +531,21 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             Helper.addMessageToProcessJournal(processId, logType, logMessage);
         }
     }
+
+    /**
+     * 
+     * @return ChannelSftp object
+     * @throws JSchException
+     */
+    private ChannelSftp setupJSch() throws JSchException {
+        JSch jsch = new JSch();
+        jsch.setKnownHosts(knownHosts);
+        Session jschSession = jsch.getSession(username, hostname);
+        jschSession.setPassword(password);
+        jschSession.connect();
+        return (ChannelSftp) jschSession.openChannel("sftp");
+    }
+
+
 
 }

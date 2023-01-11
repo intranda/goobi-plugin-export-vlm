@@ -104,31 +104,31 @@ public class VlmExportPluginTest {
     /*================= Tests for the private methods ================= */
 
     @Test
-    public void testCreateFolderGivenNull() throws Exception {
+    public void testCreateFolderLocalGivenNull() throws Exception {
         VlmExportPlugin plugin = new VlmExportPlugin();
-        assertFalse(WhiteboxImpl.invokeMethod(plugin, "createFolder", null));
+        assertFalse(WhiteboxImpl.invokeMethod(plugin, "createFolder", false, null));
     }
 
     @Test
-    public void testCreateFolderGivenEmptyPath() throws Exception {
+    public void testCreateFolderLocalGivenEmptyPath() throws Exception {
         VlmExportPlugin plugin = new VlmExportPlugin();
-        assertFalse(WhiteboxImpl.invokeMethod(plugin, "createFolder", Paths.get("")));
+        assertFalse(WhiteboxImpl.invokeMethod(plugin, "createFolder", false, Paths.get("")));
     }
 
     @Test
-    public void testCreateFolderGivenExistingPath() throws Exception {
+    public void testCreateFolderLocalGivenExistingPath() throws Exception {
         VlmExportPlugin plugin = new VlmExportPlugin();
         Path temp = Paths.get("/tmp");
         assertTrue(Files.exists(temp));
-        assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", temp));
+        assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", false, temp));
     }
 
     @Test
-    public void testCreateFolderGivenUnexistingPath() throws Exception {
+    public void testCreateFolderLocalGivenUnexistingPath() throws Exception {
         VlmExportPlugin plugin = new VlmExportPlugin();
         final Path path = Paths.get("/tmp/unexisting_path");
         assertFalse(Files.exists(path));
-        assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", path));
+        assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", false, path));
         assertTrue(Files.exists(path));
         Files.delete(path);
         assertFalse(Files.exists(path));
