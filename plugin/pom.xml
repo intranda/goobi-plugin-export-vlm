@@ -129,6 +129,11 @@
       <version>1.7.4</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>com.github.mwiede</groupId>
+      <artifactId>jsch</artifactId>
+      <version>0.2.6</version>
+	</dependency>
   </dependencies>
   <scm>
     <url>scm:git:ssh://git@gitea.intranda.com:goobi-workflow/goobi-plugin-export-vlm.git</url>
