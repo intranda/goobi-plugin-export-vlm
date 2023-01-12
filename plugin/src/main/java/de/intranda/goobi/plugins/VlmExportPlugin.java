@@ -423,7 +423,6 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @return true if the copy is successfully performed, false otherwise
      */
     private boolean tryCopySftp(Process process, Path fromPath, Path toPath) {
-        log.debug("Copy images from '" + fromPath.toString() + "' to '" + username + "@" + hostname + ":" + toPath.toString() + "'.");
         try {
             // check if the targeted directory is empty:
             if (sftpChannel.ls(toPath.toString()).size() > 2) { // because of the existence of `.` and `..` in empty folders
@@ -502,7 +501,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             sftpChannel.put(srcPath.toString(), destPath.toString());
         }
 
-        // TODO: checksum checking
+        // No need for a checksum checking logic here, since the JSch library uses its internal algorithms to assure the integrity of transfered data.
     }
 
     /**
