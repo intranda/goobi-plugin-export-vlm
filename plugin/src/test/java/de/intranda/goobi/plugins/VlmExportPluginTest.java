@@ -39,6 +39,7 @@ public class VlmExportPluginTest {
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
     private File tempFolder;
+    private String tempFolderDirectory;
     private static String resourcesFolder;
 
     private static Path defaultGoobiConfig;
@@ -65,6 +66,7 @@ public class VlmExportPluginTest {
     @Before
     public void setUp() throws Exception {
         tempFolder = folder.newFolder("tmp");
+        tempFolderDirectory = tempFolder.getAbsolutePath();
 
         PowerMock.mockStatic(ConfigPlugins.class);
         EasyMock.expect(ConfigPlugins.getPluginConfig(EasyMock.anyString())).andReturn(getConfig()).anyTimes();
@@ -118,7 +120,7 @@ public class VlmExportPluginTest {
     @Test
     public void testCreateFolderLocalGivenExistingPath() throws Exception {
         VlmExportPlugin plugin = new VlmExportPlugin();
-        Path temp = Paths.get("/tmp");
+        Path temp = tempFolder.toPath();
         assertTrue(Files.exists(temp));
         assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", false, temp));
     }
@@ -126,7 +128,7 @@ public class VlmExportPluginTest {
     @Test
     public void testCreateFolderLocalGivenUnexistingPath() throws Exception {
         VlmExportPlugin plugin = new VlmExportPlugin();
-        final Path path = Paths.get("/tmp/unexisting_path");
+        final Path path = Path.of(tempFolderDirectory, "unexisting_path");
         assertFalse(Files.exists(path));
         assertTrue(WhiteboxImpl.invokeMethod(plugin, "createFolder", false, path));
         assertTrue(Files.exists(path));
