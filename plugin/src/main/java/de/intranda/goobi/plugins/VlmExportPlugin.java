@@ -88,16 +88,16 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
     @Override
     public boolean startExport(Process process) throws IOException, InterruptedException, DocStructHasNoTypeException, PreferencesException,
-    WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException, SwapException, DAOException,
-    TypeNotAllowedForParentException {
+            WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException, SwapException, DAOException,
+            TypeNotAllowedForParentException {
         String userHome = process.getProjekt().getDmsImportImagesPath();
         return startExport(process, userHome);
     }
 
     @Override
     public boolean startExport(Process process, String destination) throws IOException, InterruptedException, DocStructHasNoTypeException,
-    PreferencesException, WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException,
-    SwapException, DAOException, TypeNotAllowedForParentException {
+            PreferencesException, WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException,
+            SwapException, DAOException, TypeNotAllowedForParentException {
 
         log.debug("=============================== Starting VLM Export ===============================");
 
@@ -135,10 +135,10 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         }
 
         Path savingPath;
-        
+
         String id = ""; // aimed to be the system number, e.g. ALMA MMS-ID
         String volumeTitle = ""; // used to distinguish volumes from one another
-        
+
         boolean isOneVolumeWork = true;
 
         // read mets file to get its logical structure
@@ -163,7 +163,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
                 return false;
             }
 
-            // get the volumeTitle if the work is composed of several volumes 
+            // get the volumeTitle if the work is composed of several volumes
             if (logical.getType().isAnchor()) {
                 isOneVolumeWork = false;
                 logical = logical.getAllChildren().get(0);
@@ -322,7 +322,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         String pathString = path.toString();
         String[] folders = pathString.split("/");
         for (String folder : folders) {
-            if (folder.equals(".") || folder.equals("..")) {
+            if (".".equals(folder) || "..".equals(folder)) {
                 sftpChannel.cd(folder);
                 continue;
             }
@@ -381,7 +381,9 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         try {
             return useSftp ? tryCopySftp(process, fromPath, toPath) : tryCopyLocal(process, fromPath, toPath);
         } finally {
-            sftpChannel.exit();
+            if (sftpChannel != null) {
+                sftpChannel.exit();
+            }
             log.debug("=============================== Stopping VLM Export ===============================");
         }
     }
@@ -544,7 +546,5 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         jschSession.connect();
         return (ChannelSftp) jschSession.openChannel("sftp");
     }
-
-
 
 }
