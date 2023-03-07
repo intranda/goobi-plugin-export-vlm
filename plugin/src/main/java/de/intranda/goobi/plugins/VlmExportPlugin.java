@@ -405,6 +405,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         // if the folder is empty, great!
         try {
             copyImagesLocal(fromPath, toPath);
+            createCTLLocal(toPath);
 
         } catch (IOException e) {
             logBoth(process.getId(), LogType.ERROR,
@@ -423,6 +424,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @param fromPath absolute path to the source folder
      * @param toPath absolute path to the target folder
      * @return true if the copy is successfully performed, false otherwise
+     * @throws IOException
      */
     private boolean tryCopySftp(Process process, Path fromPath, Path toPath) {
         try {
@@ -434,8 +436,9 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             }
             // if the folder is empty, great!
             copyImagesSftp(fromPath, toPath);
+            createCTLSftp(toPath);
 
-        } catch (SftpException e) {
+        } catch (SftpException | IOException e) {
             logBoth(process.getId(), LogType.ERROR,
                     "Errors happened trying to copy from '" + fromPath.toString() + "' to '" + username + "@" + hostname + ":" + toPath.toString()
                             + "'.");
@@ -504,6 +507,54 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         }
 
         // No need for a checksum checking logic here, since the JSch library uses its internal algorithms to assure the integrity of transfered data.
+    }
+
+    /**
+     * 
+     * @param path whose folderName and parent will be used
+     * @throws IOException
+     */
+    private void createCTLLocal(Path path) throws IOException {
+        // the .ctl file should have the same name as the folder specified by this path
+        String fileName = path.getFileName().toString().concat(".ctl");
+        // and it should be created next to the folder, i.e. into the folder's parent's path
+        Path parentPath = path.getParent();
+        StorageProviderInterface provider = StorageProvider.getInstance();
+        try {
+            provider.createFile(parentPath.resolve(fileName));
+        } catch (IOException e) {
+            log.debug("Some error happened while trying to create the .ctl file.");
+            throw e;
+        }
+    }
+
+    /**
+     * 
+     * @param path whose folderName and parent will be used
+     * @throws IOException
+     * @throws SftpException
+     */
+    private void createCTLSftp(Path path) throws IOException, SftpException {
+        // the .ctl file should have the same name as the folder specified by this path
+        String fileName = path.getFileName().toString().concat(".ctl");
+        // and it should be created next to the folder, i.e. into the folder's parent's path
+        Path parentPath = path.getParent();
+        StorageProviderInterface provider = StorageProvider.getInstance();
+        try {
+            // create the empty .ctl file locally under the default temporary folder, e.g. /tmp for Linux
+            Path srcPath = Path.of(System.getProperty("java.io.tmpdir"), fileName);
+            provider.createFile(srcPath);
+
+            // copy this .ctl file to the remote location
+            Path destPath = parentPath.resolve(fileName);
+            sftpChannel.put(srcPath.toString(), destPath.toString());
+
+            // remove the local .ctl file
+            provider.deleteFile(srcPath);
+        } catch (IOException e) {
+            log.debug("Some error happened while trying to create the .ctl file locally.");
+            throw e;
+        }
     }
 
     /**
