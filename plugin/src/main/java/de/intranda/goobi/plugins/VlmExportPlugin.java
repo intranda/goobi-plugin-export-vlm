@@ -223,11 +223,14 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
+
+        Path ctlPath = null; // the .ctl file should be created next to the root folder
         // now we have the root folder, great, let's find out if we need to create subfolders
         // subfolders are only needed if the book is not a one-volume work
         if (!isOneVolumeWork) {
             // volumeTitle is already assured, let's try to create a subfolder
             String subfolderName = subfolderPrefix + volumeTitle;
+            ctlPath = savingPath;
             savingPath = savingPath.resolve(subfolderName);
             if (!createFolder(useSftp, savingPath)) {
                 logBoth(process.getId(), LogType.ERROR, "Something went wrong trying to create the directory: " + savingPath.toString());
@@ -236,7 +239,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             }
         }
         // if everything went well so far, then we only need to do the copy
-        return tryCopy(process, Paths.get(masterPath), savingPath, useSftp);
+        return tryCopy(process, Paths.get(masterPath), savingPath, ctlPath, useSftp);
     }
 
     /**
@@ -377,9 +380,10 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @param useSftp true if use SFTP, false otherwise
      * @return true if the copy is successfully performed, false otherwise
      */
-    private boolean tryCopy(Process process, Path fromPath, Path toPath, boolean useSftp) {
+    private boolean tryCopy(Process process, Path fromPath, Path toPath, Path ctlPath, boolean useSftp) {
+        Path ctl = ctlPath == null ? toPath : ctlPath;
         try {
-            return useSftp ? tryCopySftp(process, fromPath, toPath) : tryCopyLocal(process, fromPath, toPath);
+            return useSftp ? tryCopySftp(process, fromPath, toPath, ctl) : tryCopyLocal(process, fromPath, toPath, ctl);
         } finally {
             if (sftpChannel != null) {
                 sftpChannel.exit();
@@ -395,7 +399,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @param toPath absolute path to the target folder
      * @return true if the copy is successfully performed, false otherwise
      */
-    private boolean tryCopyLocal(Process process, Path fromPath, Path toPath) {
+    private boolean tryCopyLocal(Process process, Path fromPath, Path toPath, Path ctlPath) {
         StorageProviderInterface provider = StorageProvider.getInstance();
         if (!provider.list(toPath.toString()).isEmpty()) {
             logBoth(process.getId(), LogType.ERROR, "The directory: '" + toPath.toString() + "' is not empty!");
@@ -405,7 +409,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         // if the folder is empty, great!
         try {
             copyImagesLocal(fromPath, toPath);
-            createCTLLocal(toPath);
+            createCTLLocal(ctlPath);
 
         } catch (IOException e) {
             logBoth(process.getId(), LogType.ERROR,
@@ -426,7 +430,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @return true if the copy is successfully performed, false otherwise
      * @throws IOException
      */
-    private boolean tryCopySftp(Process process, Path fromPath, Path toPath) {
+    private boolean tryCopySftp(Process process, Path fromPath, Path toPath, Path ctlPath) {
         try {
             // check if the targeted directory is empty:
             if (sftpChannel.ls(toPath.toString()).size() > 2) { // because of the existence of `.` and `..` in empty folders
@@ -436,7 +440,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             }
             // if the folder is empty, great!
             copyImagesSftp(fromPath, toPath);
-            createCTLSftp(toPath);
+            createCTLSftp(ctlPath);
 
         } catch (SftpException | IOException e) {
             logBoth(process.getId(), LogType.ERROR,
