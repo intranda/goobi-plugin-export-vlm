@@ -2,11 +2,11 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>de.intranda.goobi.plugins.export</groupId>
   <artifactId>vlm</artifactId>
-  <version>1.0.0</version>
+  <version>23.04.1</version>
   <properties>
     <jar.name>plugin_intranda_export_vlm</jar.name>
     <dest.folder>/opt/digiverso/goobi/plugins/export/</dest.folder>
-    <goobi.version>23.03.2</goobi.version>
+    <goobi.version>23.04.1</goobi.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
   <distributionManagement>
