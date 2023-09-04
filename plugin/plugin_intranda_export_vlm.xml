@@ -39,8 +39,11 @@
 		<!-- If left blank, then the default setting 'false' will be used. -->
 		<sftp>true</sftp>
 		
+		<!-- If true then use ssh key for connection. If false then use password. OPTIONAL. DEFAULT false. -->
+		<useSshKey>false</useSshKey>
+		
 		<!-- Absolute path to the location of the file 'known_hosts'. -->
-		<!-- If left blank, then the default setting '{user.home}/.ssh/known_hosts' will be used. -->
+		<!-- If left blank, then the default setting '{user.home}/.ssh/known_hosts' will be used. OPTIONAL. -->
 		<knownHosts></knownHosts>
 		
 		<!-- User name at the remote host. -->
@@ -51,8 +54,19 @@
 		<!-- MANDATORY if sftp is set to be true. -->
 		<hostname>CHANGE_ME</hostname>
 		
+		<!-- Port of the remote host. -->
+		<!-- OPTIONAL. DEFAULT 22. -->
+		<port>CHANGE_ME</port>
+		
 		<!-- Password to log into the remote host 'username'@'hostname'. -->
+		<!-- MANDATORY if sftp is set to be true, while useSshKey is set to be false or not set. -->
 		<password>CHANGE_ME</password>
+		
+		<!-- Path to the private key file, e.g. ~/.ssh/id_rsa -->
+		<!-- The key is expected to be of PEM format, beginning with `BEGIN RSA PRIVATE KEY`. -->
+		<!-- The OPENSSH format, beginning with `BEGIN OPENSSH PRIVATE KEY`, is not supported yet. -->
+		<!-- MANDATORY if sftp and useSshKey are both set to be true. -->
+		<keyPath>CHANGE_ME</keyPath>
 	</config>
 	
 	<config>

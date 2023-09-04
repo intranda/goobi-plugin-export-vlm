@@ -75,6 +75,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     private String username;
     private String hostname;
     private String password;
+    private String keyPath;
+    private int port;
 
     @Override
     public void setExportFulltext(boolean arg0) {
@@ -193,13 +195,19 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         if (useSftp) {
             username = config.getString("username").trim();
             hostname = config.getString("hostname").trim();
-            password = config.getString("password").trim();
 
             if (StringUtil.isBlank(username) || StringUtil.isBlank(hostname)) {
                 logBoth(process.getId(), LogType.ERROR, "The configuration file for the VLM export is incomplete.");
                 logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                 return false;
             }
+
+            boolean useSshKey = config.getBoolean("useSshKey", false);
+            log.debug("useSshKey = " + useSshKey);
+
+            password = config.getString("password", "").trim();
+            keyPath = config.getString("keyPath", "").trim();
+            port = config.getInt("port", 22);
 
             knownHosts = config.getString("knownHosts").trim();
             if (StringUtil.isBlank(knownHosts)) {
@@ -208,7 +216,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             log.debug("knownHosts = " + knownHosts);
 
             try {
-                sftpChannel = setupJSch();
+                sftpChannel = useSshKey ? setupJSchWithKey() : setupJSchWithPassword();
                 sftpChannel.connect();
             } catch (JSchException e) {
                 log.debug("failed to initialize sftpChannel");
@@ -593,11 +601,26 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      * @return ChannelSftp object
      * @throws JSchException
      */
-    private ChannelSftp setupJSch() throws JSchException {
+    private ChannelSftp setupJSchWithPassword() throws JSchException {
         JSch jsch = new JSch();
         jsch.setKnownHosts(knownHosts);
         Session jschSession = jsch.getSession(username, hostname);
         jschSession.setPassword(password);
+        jschSession.connect();
+        return (ChannelSftp) jschSession.openChannel("sftp");
+    }
+
+    /**
+     * 
+     * @return ChannelSftp object
+     * @throws JSchException
+     */
+    private ChannelSftp setupJSchWithKey() throws JSchException {
+        JSch.setConfig("StrictHostKeyChecking", "no");
+        JSch jsch = new JSch();
+        jsch.addIdentity(keyPath);
+        Session jschSession = jsch.getSession(username, hostname);
+        jschSession.setPort(port);
         jschSession.connect();
         return (ChannelSftp) jschSession.openChannel("sftp");
     }
