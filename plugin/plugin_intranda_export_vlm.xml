@@ -16,8 +16,14 @@
 		<project>Archive_Project</project>
 		
 		<!-- The name of the system, e.g. AlmaIDDigital, AlephIDDigital, CatalogIDDigital.  -->
+		<!-- This tag has the following two OPTIONAL attributes:
+				- @anchorSplitter: if configured with a non-blank string, then it will be used to split the metadata value into two parts, where its head will be used 
+											as the main folder's name, while its tail will be used as part of the volume's name. DEFAULT value is an empty string, i.e. no splitting expected.
+				- @volumeFormat: only works when @anchorSplitter is configured with a non-blank string.
+											It is used as the left padding if the volume's name is shorter than it. DEFAULT value is an empty string, i.e. no padding needed.
+		 -->
 		<!-- MANDATORY -->
-		<identifier>CatalogIDDigital</identifier>
+		<identifier anchorSplitter="" volumeFormat="000">CatalogIDDigital</identifier>
 	    
 		<!-- The name to be used to distinguish between different volumes of one book series. -->
 		<!-- Alternatively one may also choose "TitleDocMain", just assure its difference between volumes. -->

@@ -165,8 +165,33 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
                 return false;
             }
 
-            // get the volumeTitle if the work is composed of several volumes
-            if (logical.getType().isAnchor()) {
+            // get the volumeTitle if the work is composed of several volumes:
+            // 1. check if the identifier alone contains both id and volumeTitle
+            SubnodeConfiguration identifierConfig = config.configurationAt("identifier");
+            String anchorSplitter = identifierConfig.getString("@anchorSplitter", "");
+
+            boolean hasAnchorSplitter = StringUtils.isNotBlank(anchorSplitter);
+            if (hasAnchorSplitter) {
+                String volumeFormat = identifierConfig.getString("@volumeFormat", "");
+
+                int splitIndex = id.indexOf(anchorSplitter);
+                // anchorSplitter should be NEITHER the first NOR the last char in id
+                if (splitIndex <= 0 || splitIndex > id.length() - 2) {
+                    logBoth(process.getId(), LogType.ERROR,
+                            "No valid volumeTitle found. It seems that " + id + " is invalid as " + fieldIdentifier
+                                    + ", given that the attribute @anchorSplitter is configured as " + anchorSplitter + ". Recheck it please.");
+                    logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+                    return false;
+                }
+
+                volumeTitle = id.substring(splitIndex + 1);
+                id = id.substring(0, splitIndex);
+                volumeTitle = StringUtils.leftPad(volumeTitle, volumeFormat.length(), volumeFormat);
+                isOneVolumeWork = false;
+            }
+
+            // 2. check if an anchor file exists
+            if (!hasAnchorSplitter && logical.getType().isAnchor()) {
                 isOneVolumeWork = false;
                 logical = logical.getAllChildren().get(0);
                 volumeTitle = findMetadata(logical, fieldVolume).replace(" ", "_");
