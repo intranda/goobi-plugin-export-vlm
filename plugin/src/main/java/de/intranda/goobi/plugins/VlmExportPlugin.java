@@ -340,7 +340,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     				.collect(Collectors.toList());
     	// The matchingConditions should be at most 1: all matching config and one config that matches with a condition
     	if (highestPriorityConfigurations.size() > 1) {
-    		log.error("Multiple config blocks match! The result might be unexpected!");
+    		logBoth(process.getId(), LogType.ERROR, "Multiple config blocks match! The result might be unexpected!");
     	}
     	if (!highestPriorityConfigurations.isEmpty()) {
     		return highestPriorityConfigurations.get(0);
@@ -372,7 +372,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     	if ("variablematcher".equalsIgnoreCase(type)) {
     		return variableRegexMatcher(condition);
     	} else {
-    		log.error("Cannot check condition for unknown type \"" + type + "\"!");
+    		logBoth(process.getId(), LogType.ERROR, "Cannot check configuration condition for unknown type \"" + type + "\"!");
     		return false;
     	}
     }
@@ -406,17 +406,17 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
      */
     private boolean createFolder(boolean useSftp, Path path) {
         if (path == null) {
-            log.error("The path provided is null!");
+            logBoth(process.getId(), LogType.ERROR, "The path provided is null!");
             return false;
         }
         if (StringUtils.isBlank(path.toString())) {
-            log.error("The path provided is empty!");
+        	logBoth(process.getId(), LogType.ERROR, "The path provided is empty!");
             return false;
         }
         try {
             return useSftp ? createFolderSftp(path) : createFolderLocal(path);
         } catch (SftpException e) {
-            log.error("Failed to create directory remotely: " + path.toString());
+        	logBoth(process.getId(), LogType.ERROR, "Failed to create directory remotely: " + path.toString());
             return false;
         }
     }
@@ -437,7 +437,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             log.debug("Directory created locally: " + path.toString());
             return true;
         } catch (IOException e) {
-            log.error("Failed to create directory locally: " + path.toString());
+        	logBoth(process.getId(), LogType.ERROR, "Failed to create directory locally: " + path.toString());
             return false;
         }
     }
@@ -615,7 +615,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
                 toChecksum = DigestUtils.sha256Hex(Files.newInputStream(destPath));
                 // if still not equal, delete the already copied contents and throw an IOException
                 if (!fromChecksum.equals(toChecksum)) {
-                    log.error("Checksum check failed twice while trying to copy the file: '" + srcPath.toString() + "'");
+                	logBoth(process.getId(), LogType.ERROR, "Checksum check failed twice while trying to copy the file: '" + srcPath.toString() + "'");
                     log.debug("checksum original = " + fromChecksum);
                     log.debug("checksum after copy = " + toChecksum);
                     log.debug("Already copied contents will be deleted.");
