@@ -94,6 +94,28 @@
 		<password></password>
 	</config>
 	
+	<!-- Apply this configuration only under the condition that the `singleDigCollection` in the metadata is a 20 digit number -->
+	<config>
+		<project>Manuscript_Project</project>		
+		<identifier>CatalogIDDigital</identifier>		
+		<volume>CurrentNoSorting</volume>		
+		<path>/tmp/somewhere</path>
+		<subfolderPrefix></subfolderPrefix>
+		
+		<condition>
+            <type>variablematcher</type>
+            <field>{meta.singleDigCollection}</field>
+            <matches>\d{20}</matches>
+        </condition>
+		
+		<sftp>false</sftp>
+		<knownHosts></knownHosts>
+		
+		<username></username>
+		<hostname></hostname>
+		<password></password>
+	</config>
+	
 	<config>
 		<project>*</project>
 		<identifier>CatalogIDDigital</identifier>

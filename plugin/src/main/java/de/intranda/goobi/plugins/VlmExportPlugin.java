@@ -5,13 +5,19 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Comparator;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Stack;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.configuration.SubnodeConfiguration;
 import org.apache.commons.configuration.XMLConfiguration;
 import org.apache.commons.configuration.reloading.FileChangedReloadingStrategy;
 import org.apache.commons.configuration.tree.xpath.XPathExpressionEngine;
+import org.apache.commons.configuration.HierarchicalConfiguration;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.util.StringUtil;
 import org.goobi.beans.Process;
@@ -36,8 +42,13 @@ import de.sub.goobi.helper.exceptions.DAOException;
 import de.sub.goobi.helper.exceptions.ExportFileException;
 import de.sub.goobi.helper.exceptions.SwapException;
 import de.sub.goobi.helper.exceptions.UghHelperException;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.Setter;
+import lombok.experimental.NonFinal;
 import lombok.extern.log4j.Log4j2;
 import net.xeoh.plugins.base.annotations.PluginImplementation;
 import ugh.dl.DigitalDocument;
@@ -77,6 +88,13 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     private String password;
     private String keyPath;
     private int port;
+    
+    private Process process;
+    private Fileformat ff;
+    private DigitalDocument dd;
+    private DocStruct logical;
+    private Prefs prefs;
+    private VariableReplacer vp;
 
     @Override
     public void setExportFulltext(boolean arg0) {
@@ -111,9 +129,23 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
+        
+     // read mets file to get its logical structure
+        try {
+        	this.process = process;
+        	this.ff = process.readMetadataFile();
+        	this.dd = ff.getDigitalDocument();
+        	this.logical = dd.getLogicalDocStruct();
+        	this.prefs = process.getRegelsatz().getPreferences();
+        	this.vp = new VariableReplacer(dd, prefs, process, null);
+        } catch (ReadException | PreferencesException | IOException | SwapException e) {
+            logBoth(process.getId(), LogType.ERROR, "Error happened: " + e);
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+            return false;
+        }
 
         // read information from config file
-        SubnodeConfiguration config = getConfig(process);
+        HierarchicalConfiguration config = getConfig();
         String path = config.getString("path").trim();
         // destination will be used as default value only if <path> is not configured
         // hence we only have to assure that it is not null in that scenario
@@ -143,77 +175,64 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
 
         boolean isOneVolumeWork = true;
 
-        // read mets file to get its logical structure
-        try {
-            Fileformat ff = process.readMetadataFile();
-            DigitalDocument dd = ff.getDigitalDocument();
-            DocStruct logical = dd.getLogicalDocStruct();
-            Prefs prefs = process.getRegelsatz().getPreferences();
-            VariableReplacer vp = new VariableReplacer(dd, prefs, process, null);
+        // replace Goobi Variables in the path string and get the Path object of it
+        path = vp.replace(path);
+        savingPath = Paths.get(path);
+        log.debug("target path = " + path);
 
-            // replace Goobi Variables in the path string and get the Path object of it
-            path = vp.replace(path);
-            savingPath = Paths.get(path);
-            log.debug("target path = " + path);
+        // get the ID
+        id = findMetadata(logical, fieldIdentifier);
+        // assure that id is valid
+        if (StringUtils.isBlank(id)) {
+            logBoth(process.getId(), LogType.ERROR, "No valid id found. It seems that " + fieldIdentifier + " is invalid. Recheck it please.");
+            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+            return false;
+        }
 
-            // get the ID
-            id = findMetadata(logical, fieldIdentifier);
-            // assure that id is valid
-            if (StringUtils.isBlank(id)) {
-                logBoth(process.getId(), LogType.ERROR, "No valid id found. It seems that " + fieldIdentifier + " is invalid. Recheck it please.");
+        // get the volumeTitle if the work is composed of several volumes:
+        // 1. check if the identifier alone contains both id and volumeTitle
+        SubnodeConfiguration identifierConfig = config.configurationAt("identifier");
+        String anchorSplitter = identifierConfig.getString("@anchorSplitter", "");
+
+        boolean hasAnchorSplitter = StringUtils.isNotBlank(anchorSplitter);
+        if (hasAnchorSplitter) {
+            String volumeFormat = identifierConfig.getString("@volumeFormat", "");
+
+            int splitIndex = id.indexOf(anchorSplitter);
+            // anchorSplitter should be NEITHER the first NOR the last char in id
+            if (splitIndex <= 0 || splitIndex > id.length() - 2) {
+                logBoth(process.getId(), LogType.ERROR,
+                        "No valid volumeTitle found. It seems that " + id + " is invalid as " + fieldIdentifier
+                                + ", given that the attribute @anchorSplitter is configured as " + anchorSplitter + ". Recheck it please.");
                 logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
                 return false;
             }
 
-            // get the volumeTitle if the work is composed of several volumes:
-            // 1. check if the identifier alone contains both id and volumeTitle
-            SubnodeConfiguration identifierConfig = config.configurationAt("identifier");
-            String anchorSplitter = identifierConfig.getString("@anchorSplitter", "");
-
-            boolean hasAnchorSplitter = StringUtils.isNotBlank(anchorSplitter);
-            if (hasAnchorSplitter) {
-                String volumeFormat = identifierConfig.getString("@volumeFormat", "");
-
-                int splitIndex = id.indexOf(anchorSplitter);
-                // anchorSplitter should be NEITHER the first NOR the last char in id
-                if (splitIndex <= 0 || splitIndex > id.length() - 2) {
-                    logBoth(process.getId(), LogType.ERROR,
-                            "No valid volumeTitle found. It seems that " + id + " is invalid as " + fieldIdentifier
-                                    + ", given that the attribute @anchorSplitter is configured as " + anchorSplitter + ". Recheck it please.");
-                    logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-                    return false;
-                }
-
-                volumeTitle = id.substring(splitIndex + 1);
-                id = id.substring(0, splitIndex);
-                volumeTitle = StringUtils.leftPad(volumeTitle, volumeFormat.length(), volumeFormat);
-                isOneVolumeWork = false;
-            }
-
-            // 2. check if an anchor file exists
-            if (!hasAnchorSplitter && logical.getType().isAnchor()) {
-                isOneVolumeWork = false;
-                logical = logical.getAllChildren().get(0);
-                volumeTitle = findMetadata(logical, fieldVolume).replace(" ", "_");
-                if (StringUtils.isBlank(volumeTitle)) {
-                    logBoth(process.getId(), LogType.ERROR,
-                            "No valid volumeTitle found. It seems that " + fieldVolume + " is invalid. Recheck it please.");
-                    logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-                    return false;
-                }
-            }
-
-            log.debug("isOneVolumeWork = " + isOneVolumeWork);
-            log.debug("id = " + id);
-            if (!isOneVolumeWork) {
-                log.debug("volumeTitle = " + volumeTitle);
-            }
-
-        } catch (ReadException | PreferencesException | IOException | SwapException e) {
-            logBoth(process.getId(), LogType.ERROR, "Error happened: " + e);
-            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-            return false;
+            volumeTitle = id.substring(splitIndex + 1);
+            id = id.substring(0, splitIndex);
+            volumeTitle = StringUtils.leftPad(volumeTitle, volumeFormat.length(), volumeFormat);
+            isOneVolumeWork = false;
         }
+
+        // 2. check if an anchor file exists
+        if (!hasAnchorSplitter && logical.getType().isAnchor()) {
+            isOneVolumeWork = false;
+            logical = logical.getAllChildren().get(0);
+            volumeTitle = findMetadata(logical, fieldVolume).replace(" ", "_");
+            if (StringUtils.isBlank(volumeTitle)) {
+                logBoth(process.getId(), LogType.ERROR,
+                        "No valid volumeTitle found. It seems that " + fieldVolume + " is invalid. Recheck it please.");
+                logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+                return false;
+            }
+        }
+
+        log.debug("isOneVolumeWork = " + isOneVolumeWork);
+        log.debug("id = " + id);
+        if (!isOneVolumeWork) {
+            log.debug("volumeTitle = " + volumeTitle);
+        }
+        
 
         // prepare sftpChannel if necessary
         boolean useSftp = config.getBoolean("sftp", false);
@@ -276,30 +295,100 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     }
 
     /**
-     * 
-     * @param process
      * @return SubnodeConfiguration object according to the project's name
      */
-    private SubnodeConfiguration getConfig(Process process) {
-        String projectName = process.getProjekt().getTitel();
+    private HierarchicalConfiguration getConfig() {
+        String projectName = this.process.getProjekt().getTitel();
         log.debug("projectName = " + projectName);
         XMLConfiguration xmlConfig = ConfigPlugins.getPluginConfig(title);
         xmlConfig.setExpressionEngine(new XPathExpressionEngine());
         xmlConfig.setReloadingStrategy(new FileChangedReloadingStrategy());
-        SubnodeConfiguration conf = null;
+        HierarchicalConfiguration conf = null;
 
         // order of configuration is:
         // 1.) project name matches
         // 2.) project is *
+        List<HierarchicalConfiguration> confs;
+        
         try {
-            conf = xmlConfig.configurationAt("//config[./project = '" + projectName + "']");
+            confs = xmlConfig.configurationsAt("//config[./project = '" + projectName + "']");
         } catch (IllegalArgumentException e) {
-            conf = xmlConfig.configurationAt("//config[./project = '*']");
+            confs = xmlConfig.configurationsAt("//config[./project = '*']");
         }
+        
+        conf = filterConfigurations(confs);
 
         return conf;
     }
 
+    private HierarchicalConfiguration filterConfigurations(List<HierarchicalConfiguration> confs) {
+    	List<PriorityConfiguration> matchingConfigurations = new LinkedList<>();
+    	for (HierarchicalConfiguration conf : confs) {
+    		int priority = howManyConditionsApply(conf);
+    		if (priority >= 0) {
+    			matchingConfigurations.add(new PriorityConfiguration(conf, priority));
+    		}
+    	}
+    	// The matchingConditions should be at most 2: all matching config and one config that matches with a condition
+    	if (matchingConfigurations.size() > 2) {
+    		log.error("Multiple config blocks match! The result might be unexpected!");
+    	}
+    	if (!matchingConfigurations.isEmpty()) {
+    		return matchingConfigurations.stream().sorted(Comparator.reverseOrder()).findFirst().get().configuration;
+    	}
+    	return null;
+    }
+    
+    /**
+     * Check if all conditions of the config section apply and if they do, return the number of conditions.
+     * @param conf Config section to check
+     * @return Number of conditions if all conditions apply or -1 otherwise. 0 in case of no specified conditions.
+     */
+    private int howManyConditionsApply(HierarchicalConfiguration conf) {
+    	List<HierarchicalConfiguration> conditions = conf.configurationsAt("/condition");
+    	for (HierarchicalConfiguration condition : conditions) {
+    		if (!doesConditionMatch(condition)) {
+    			return -1;
+    		}
+    	}
+    	return conditions.size();
+    }
+    
+    private boolean doesConditionMatch(HierarchicalConfiguration condition) {
+    	return determineConditionMatcher(condition);
+    }
+    
+    private boolean determineConditionMatcher(HierarchicalConfiguration condition) {
+    	String type = condition.getString("type");
+    	if ("variablematcher".equalsIgnoreCase(type)) {
+    		return variableRegexMatcher(condition);
+    	} else {
+    		log.error("Cannot check condition for unknown type \"" + type + "\"!");
+    		return false;
+    	}
+    }
+    
+    private boolean variableRegexMatcher(HierarchicalConfiguration condition) {
+    	String field = this.vp.replace(condition.getString("field"));
+    	String regex = condition.getString("matches");
+    	Pattern pattern = Pattern.compile(regex);
+    	Matcher matcher = pattern.matcher(field);
+    	return matcher.matches();
+    }
+    
+    // TODO: In case of extension, refactor matched condition type into own classes
+    
+    @Data
+    @AllArgsConstructor
+    class PriorityConfiguration implements Comparable<PriorityConfiguration> {
+    	private HierarchicalConfiguration configuration;
+    	private int priority;
+		@Override
+		public int compareTo(PriorityConfiguration o) {
+			return Integer.compare(priority, o.priority);
+		}
+    }
+    
     /**
      * 
      * @param useSftp true if use SFTP, false otherwise
