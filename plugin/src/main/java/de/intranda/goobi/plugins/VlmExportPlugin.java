@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Stack;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.configuration.SubnodeConfiguration;
@@ -336,7 +337,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     			matchingConfigurations.stream()
     				.filter(c -> c.priority == maxPriority)
     				.map(c -> c.configuration)
-    				.toList();
+    				.collect(Collectors.toList());
     	// The matchingConditions should be at most 1: all matching config and one config that matches with a condition
     	if (highestPriorityConfigurations.size() > 1) {
     		log.error("Multiple config blocks match! The result might be unexpected!");
