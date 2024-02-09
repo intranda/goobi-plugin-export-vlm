@@ -329,12 +329,20 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     			matchingConfigurations.add(new PriorityConfiguration(conf, priority));
     		}
     	}
-    	// The matchingConditions should be at most 2: all matching config and one config that matches with a condition
-    	if (matchingConfigurations.size() > 2) {
+    	int maxPriority = matchingConfigurations.stream()
+    			.mapToInt(c -> c.priority)
+    			.max().orElse(-1);
+    	List<HierarchicalConfiguration> highestPriorityConfigurations = 
+    			matchingConfigurations.stream()
+    				.filter(c -> c.priority == maxPriority)
+    				.map(c -> c.configuration)
+    				.toList();
+    	// The matchingConditions should be at most 1: all matching config and one config that matches with a condition
+    	if (highestPriorityConfigurations.size() > 1) {
     		log.error("Multiple config blocks match! The result might be unexpected!");
     	}
-    	if (!matchingConfigurations.isEmpty()) {
-    		return matchingConfigurations.stream().sorted(Comparator.reverseOrder()).findFirst().get().configuration;
+    	if (!highestPriorityConfigurations.isEmpty()) {
+    		return highestPriorityConfigurations.get(0);
     	}
     	return null;
     }
