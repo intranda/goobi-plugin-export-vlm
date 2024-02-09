@@ -313,6 +313,9 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         
         try {
             confs = xmlConfig.configurationsAt("//config[./project = '" + projectName + "']");
+            if (confs.isEmpty()) {
+            	confs = xmlConfig.configurationsAt("//config[./project = '*']");
+            }
         } catch (IllegalArgumentException e) {
             confs = xmlConfig.configurationsAt("//config[./project = '*']");
         }
