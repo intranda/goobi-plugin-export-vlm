@@ -5,20 +5,18 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Stack;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.configuration.HierarchicalConfiguration;
 import org.apache.commons.configuration.SubnodeConfiguration;
 import org.apache.commons.configuration.XMLConfiguration;
 import org.apache.commons.configuration.reloading.FileChangedReloadingStrategy;
 import org.apache.commons.configuration.tree.xpath.XPathExpressionEngine;
-import org.apache.commons.configuration.HierarchicalConfiguration;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.util.StringUtil;
 import org.goobi.beans.Process;
@@ -46,10 +44,7 @@ import de.sub.goobi.helper.exceptions.UghHelperException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
-import lombok.experimental.NonFinal;
 import lombok.extern.log4j.Log4j2;
 import net.xeoh.plugins.base.annotations.PluginImplementation;
 import ugh.dl.DigitalDocument;
@@ -89,7 +84,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     private String password;
     private String keyPath;
     private int port;
-    
+
     private Process process;
     private Fileformat ff;
     private DigitalDocument dd;
@@ -130,15 +125,15 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
-        
-     // read mets file to get its logical structure
+
+        // read mets file to get its logical structure
         try {
-        	this.process = process;
-        	this.ff = process.readMetadataFile();
-        	this.dd = ff.getDigitalDocument();
-        	this.logical = dd.getLogicalDocStruct();
-        	this.prefs = process.getRegelsatz().getPreferences();
-        	this.vp = new VariableReplacer(dd, prefs, process, null);
+            this.process = process;
+            this.ff = process.readMetadataFile();
+            this.dd = ff.getDigitalDocument();
+            this.logical = dd.getLogicalDocStruct();
+            this.prefs = process.getRegelsatz().getPreferences();
+            this.vp = new VariableReplacer(dd, prefs, process, null);
         } catch (ReadException | PreferencesException | IOException | SwapException e) {
             logBoth(process.getId(), LogType.ERROR, "Error happened: " + e);
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
@@ -233,7 +228,6 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         if (!isOneVolumeWork) {
             log.debug("volumeTitle = " + volumeTitle);
         }
-        
 
         // prepare sftpChannel if necessary
         boolean useSftp = config.getBoolean("sftp", false);
@@ -310,97 +304,100 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         // 1.) project name matches
         // 2.) project is *
         List<HierarchicalConfiguration> confs;
-        
+
         try {
             confs = xmlConfig.configurationsAt("//config[./project = '" + projectName + "']");
             if (confs.isEmpty()) {
-            	confs = xmlConfig.configurationsAt("//config[./project = '*']");
+                confs = xmlConfig.configurationsAt("//config[./project = '*']");
             }
         } catch (IllegalArgumentException e) {
             confs = xmlConfig.configurationsAt("//config[./project = '*']");
         }
-        
+
         conf = filterConfigurations(confs);
 
         return conf;
     }
 
     private HierarchicalConfiguration filterConfigurations(List<HierarchicalConfiguration> confs) {
-    	List<PriorityConfiguration> matchingConfigurations = new LinkedList<>();
-    	for (HierarchicalConfiguration conf : confs) {
-    		int priority = howManyConditionsApply(conf);
-    		if (priority >= 0) {
-    			matchingConfigurations.add(new PriorityConfiguration(conf, priority));
-    		}
-    	}
-    	int maxPriority = matchingConfigurations.stream()
-    			.mapToInt(c -> c.priority)
-    			.max().orElse(-1);
-    	List<HierarchicalConfiguration> highestPriorityConfigurations = 
-    			matchingConfigurations.stream()
-    				.filter(c -> c.priority == maxPriority)
-    				.map(c -> c.configuration)
-    				.collect(Collectors.toList());
-    	// The matchingConditions should be at most 1: all matching config and one config that matches with a condition
-    	if (highestPriorityConfigurations.size() > 1) {
-    		logBoth(process.getId(), LogType.ERROR, "Multiple config blocks match! The result might be unexpected!");
-    	}
-    	if (!highestPriorityConfigurations.isEmpty()) {
-    		return highestPriorityConfigurations.get(0);
-    	}
-    	return null;
+        List<PriorityConfiguration> matchingConfigurations = new LinkedList<>();
+        for (HierarchicalConfiguration conf : confs) {
+            int priority = howManyConditionsApply(conf);
+            if (priority >= 0) {
+                matchingConfigurations.add(new PriorityConfiguration(conf, priority));
+            }
+        }
+        int maxPriority = matchingConfigurations.stream()
+                .mapToInt(c -> c.priority)
+                .max()
+                .orElse(-1);
+        List<HierarchicalConfiguration> highestPriorityConfigurations =
+                matchingConfigurations.stream()
+                        .filter(c -> c.priority == maxPriority)
+                        .map(c -> c.configuration)
+                        .collect(Collectors.toList());
+        // The matchingConditions should be at most 1: all matching config and one config that matches with a condition
+        if (highestPriorityConfigurations.size() > 1) {
+            logBoth(process.getId(), LogType.ERROR, "Multiple config blocks match! The result might be unexpected!");
+        }
+        if (!highestPriorityConfigurations.isEmpty()) {
+            return highestPriorityConfigurations.get(0);
+        }
+        return null;
     }
-    
+
     /**
      * Check if all conditions of the config section apply and if they do, return the number of conditions.
+     *
      * @param conf Config section to check
      * @return Number of conditions if all conditions apply or -1 otherwise. 0 in case of no specified conditions.
      */
     private int howManyConditionsApply(HierarchicalConfiguration conf) {
-    	List<HierarchicalConfiguration> conditions = conf.configurationsAt("/condition");
-    	for (HierarchicalConfiguration condition : conditions) {
-    		if (!doesConditionMatch(condition)) {
-    			return -1;
-    		}
-    	}
-    	return conditions.size();
+        List<HierarchicalConfiguration> conditions = conf.configurationsAt("/condition");
+        for (HierarchicalConfiguration condition : conditions) {
+            if (!doesConditionMatch(condition)) {
+                return -1;
+            }
+        }
+        return conditions.size();
     }
-    
+
     private boolean doesConditionMatch(HierarchicalConfiguration condition) {
-    	return determineConditionMatcher(condition);
+        return determineConditionMatcher(condition);
     }
-    
+
     private boolean determineConditionMatcher(HierarchicalConfiguration condition) {
-    	String type = condition.getString("type");
-    	if ("variablematcher".equalsIgnoreCase(type)) {
-    		return variableRegexMatcher(condition);
-    	} else {
-    		logBoth(process.getId(), LogType.ERROR, "Cannot check configuration condition for unknown type \"" + type + "\"!");
-    		return false;
-    	}
+        String type = condition.getString("type");
+        if ("variablematcher".equalsIgnoreCase(type)) {
+            return variableRegexMatcher(condition);
+        } else {
+            logBoth(process.getId(), LogType.ERROR, "Cannot check configuration condition for unknown type \"" + type + "\"!");
+            return false;
+        }
     }
-    
+
     private boolean variableRegexMatcher(HierarchicalConfiguration condition) {
-    	String field = this.vp.replace(condition.getString("field"));
-    	String regex = condition.getString("matches");
-    	Pattern pattern = Pattern.compile(regex);
-    	Matcher matcher = pattern.matcher(field);
-    	return matcher.matches();
+        String field = this.vp.replace(condition.getString("field"));
+        String regex = condition.getString("matches");
+        Pattern pattern = Pattern.compile(regex);
+        Matcher matcher = pattern.matcher(field);
+        return matcher.matches();
     }
-    
+
     // TODO: In case of extension, refactor matched condition type into own classes
-    
+
     @Data
     @AllArgsConstructor
     class PriorityConfiguration implements Comparable<PriorityConfiguration> {
-    	private HierarchicalConfiguration configuration;
-    	private int priority;
-		@Override
-		public int compareTo(PriorityConfiguration o) {
-			return Integer.compare(priority, o.priority);
-		}
+        private HierarchicalConfiguration configuration;
+        private int priority;
+
+        @Override
+        public int compareTo(PriorityConfiguration o) {
+            return Integer.compare(priority, o.priority);
+        }
     }
-    
+
     /**
      * 
      * @param useSftp true if use SFTP, false otherwise
@@ -413,13 +410,13 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             return false;
         }
         if (StringUtils.isBlank(path.toString())) {
-        	logBoth(process.getId(), LogType.ERROR, "The path provided is empty!");
+            logBoth(process.getId(), LogType.ERROR, "The path provided is empty!");
             return false;
         }
         try {
             return useSftp ? createFolderSftp(path) : createFolderLocal(path);
         } catch (SftpException e) {
-        	logBoth(process.getId(), LogType.ERROR, "Failed to create directory remotely: " + path.toString());
+            logBoth(process.getId(), LogType.ERROR, "Failed to create directory remotely: " + path.toString());
             return false;
         }
     }
@@ -440,7 +437,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             log.debug("Directory created locally: " + path.toString());
             return true;
         } catch (IOException e) {
-        	logBoth(process.getId(), LogType.ERROR, "Failed to create directory locally: " + path.toString());
+            logBoth(process.getId(), LogType.ERROR, "Failed to create directory locally: " + path.toString());
             return false;
         }
     }
@@ -618,7 +615,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
                 toChecksum = DigestUtils.sha256Hex(Files.newInputStream(destPath));
                 // if still not equal, delete the already copied contents and throw an IOException
                 if (!fromChecksum.equals(toChecksum)) {
-                	logBoth(process.getId(), LogType.ERROR, "Checksum check failed twice while trying to copy the file: '" + srcPath.toString() + "'");
+                    logBoth(process.getId(), LogType.ERROR,
+                            "Checksum check failed twice while trying to copy the file: '" + srcPath.toString() + "'");
                     log.debug("checksum original = " + fromChecksum);
                     log.debug("checksum after copy = " + toChecksum);
                     log.debug("Already copied contents will be deleted.");
@@ -657,9 +655,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         String fileName = path.getFileName().toString().concat(".ctl");
         // and it should be created next to the folder, i.e. into the folder's parent's path
         Path parentPath = path.getParent();
-        StorageProviderInterface provider = StorageProvider.getInstance();
         try {
-            provider.createFile(parentPath.resolve(fileName));
+            Files.createFile(parentPath.resolve(fileName));
         } catch (IOException e) {
             log.debug("Some error happened while trying to create the .ctl file.");
             throw e;
@@ -681,7 +678,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         try {
             // create the empty .ctl file locally under the default temporary folder, e.g. /tmp for Linux
             Path srcPath = Path.of(System.getProperty("java.io.tmpdir"), fileName);
-            provider.createFile(srcPath);
+            Files.createFile(srcPath);
 
             // copy this .ctl file to the remote location
             Path destPath = parentPath.resolve(fileName);
