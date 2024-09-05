@@ -15,8 +15,8 @@ Detail                      | Description
 **Plugin identifier**       | intranda_export_vlm
 **Plugin type**             | export
 **Licence**                 | GPL 2.0 or newer
-**Documentation (German)**  | https://docs.goobi.io/workflow-plugins/v/eng/export/goobi-plugin-export-vlm
-**Documentation (English)** | https://docs.goobi.io/workflow-plugins/v/ger/export/goobi-plugin-export-vlm
+**Documentation (German)**  | https://docs.goobi.io/workflow-plugins/v/ger/export/goobi-plugin-export-vlm
+**Documentation (English)** | https://docs.goobi.io/workflow-plugins/v/eng/export/goobi-plugin-export-vlm
 
 ## Goobi details
 
