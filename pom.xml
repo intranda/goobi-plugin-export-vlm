@@ -3,7 +3,7 @@
   <parent>
     <groupId>io.goobi.workflow</groupId>
     <artifactId>workflow-base</artifactId>
-    <version>24.09</version>
+    <version>24.10</version>
     <relativePath />
   </parent>
   <groupId>io.goobi.workflow.plugin</groupId>
@@ -25,10 +25,6 @@
       <version>${project.version}</version>
       <classifier>classes</classifier>
     </dependency>
-    <dependency>
-      <groupId>com.github.mwiede</groupId>
-      <artifactId>jsch</artifactId>
-      <version>0.2.6</version>
-    </dependency>
+
   </dependencies>
 </project>

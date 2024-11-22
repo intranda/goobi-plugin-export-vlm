@@ -9,7 +9,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.configuration.HierarchicalConfiguration;
@@ -27,6 +26,7 @@ import org.goobi.production.plugin.interfaces.IExportPlugin;
 import org.goobi.production.plugin.interfaces.IPlugin;
 
 import com.jcraft.jsch.ChannelSftp;
+import com.jcraft.jsch.ChannelSftp.LsEntry;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
@@ -86,11 +86,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     private int port;
 
     private Process process;
-    private Fileformat ff;
-    private DigitalDocument dd;
-    private DocStruct logical;
-    private Prefs prefs;
-    private VariableReplacer vp;
+
+    private transient VariableReplacer vp;
 
     @Override
     public void setExportFulltext(boolean arg0) {
@@ -125,15 +122,15 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
             return false;
         }
-
+        DocStruct logical = null;
         // read mets file to get its logical structure
         try {
             this.process = process;
-            this.ff = process.readMetadataFile();
-            this.dd = ff.getDigitalDocument();
-            this.logical = dd.getLogicalDocStruct();
-            this.prefs = process.getRegelsatz().getPreferences();
-            this.vp = new VariableReplacer(dd, prefs, process, null);
+            Fileformat ff = process.readMetadataFile();
+            DigitalDocument dd = ff.getDigitalDocument();
+            logical = dd.getLogicalDocStruct();
+            Prefs prefs = process.getRegelsatz().getPreferences();
+            vp = new VariableReplacer(dd, prefs, process, null);
         } catch (ReadException | PreferencesException | IOException | SwapException e) {
             logBoth(process.getId(), LogType.ERROR, "Error happened: " + e);
             logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
@@ -335,7 +332,7 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
                 matchingConfigurations.stream()
                         .filter(c -> c.priority == maxPriority)
                         .map(c -> c.configuration)
-                        .collect(Collectors.toList());
+                        .toList();
         // The matchingConditions should be at most 1: all matching config and one config that matches with a condition
         if (highestPriorityConfigurations.size() > 1) {
             logBoth(process.getId(), LogType.ERROR, "Multiple config blocks match! The result might be unexpected!");
@@ -367,24 +364,22 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     }
 
     private boolean determineConditionMatcher(HierarchicalConfiguration condition) {
-        String type = condition.getString("type");
-        if ("variablematcher".equalsIgnoreCase(type)) {
+        String conditionType = condition.getString("type");
+        if ("variablematcher".equalsIgnoreCase(conditionType)) {
             return variableRegexMatcher(condition);
         } else {
-            logBoth(process.getId(), LogType.ERROR, "Cannot check configuration condition for unknown type \"" + type + "\"!");
+            logBoth(process.getId(), LogType.ERROR, "Cannot check configuration condition for unknown type \"" + conditionType + "\"!");
             return false;
         }
     }
 
     private boolean variableRegexMatcher(HierarchicalConfiguration condition) {
-        String field = this.vp.replace(condition.getString("field"));
+        String field = vp.replace(condition.getString("field"));
         String regex = condition.getString("matches");
         Pattern pattern = Pattern.compile(regex);
         Matcher matcher = pattern.matcher(field);
         return matcher.matches();
     }
-
-    // TODO: In case of extension, refactor matched condition type into own classes
 
     @Data
     @AllArgsConstructor
@@ -533,11 +528,8 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
     private boolean tryCopyLocal(Process process, Path fromPath, Path toPath, Path ctlPath) {
         StorageProviderInterface provider = StorageProvider.getInstance();
         if (!provider.list(toPath.toString()).isEmpty()) {
-            logBoth(process.getId(), LogType.ERROR, "The directory: '" + toPath.toString() + "' is not empty!");
-            logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-            return false;
+            provider.deleteInDir(toPath);
         }
-        // if the folder is empty, great!
         try {
             copyImagesLocal(fromPath, toPath);
             createCTLLocal(ctlPath);
@@ -565,9 +557,16 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
         try {
             // check if the targeted directory is empty:
             if (sftpChannel.ls(toPath.toString()).size() > 2) { // because of the existence of `.` and `..` in empty folders
-                logBoth(process.getId(), LogType.ERROR, "The directory: '" + toPath.toString() + "' is not empty!");
-                logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-                return false;
+                // delete old content, if this is the case
+                String currentFolder = sftpChannel.pwd();
+                sftpChannel.cd(toPath.toString()); // switch into the directory
+                List<LsEntry> existingData = sftpChannel.ls("."); // list content
+                for (LsEntry entry : existingData) {
+                    if (!".".equals(entry.getFilename()) && !"..".equals(entry.getFilename())) {
+                        sftpChannel.rm(entry.getFilename()); // remove files
+                    }
+                }
+                sftpChannel.cd(currentFolder); // switch back to the actual folder
             }
             // if the folder is empty, great!
             copyImagesSftp(fromPath, toPath);
