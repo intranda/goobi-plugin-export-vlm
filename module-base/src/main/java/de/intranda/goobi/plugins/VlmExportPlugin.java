@@ -213,10 +213,16 @@ public class VlmExportPlugin implements IExportPlugin, IPlugin {
             logical = logical.getAllChildren().get(0);
             volumeTitle = findMetadata(logical, fieldVolume).replace(" ", "_");
             if (StringUtils.isBlank(volumeTitle)) {
-                logBoth(process.getId(), LogType.ERROR,
-                        "No valid volumeTitle found. It seems that " + fieldVolume + " is invalid. Recheck it please.");
-                logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
-                return false;
+                // metadata value is missing, try to get it from process name
+                if (process.getTitel().contains("_")) {
+                    volumeTitle = process.getTitel().split("_")[1];
+                }
+                if (StringUtils.isBlank(volumeTitle)) {
+                    logBoth(process.getId(), LogType.ERROR,
+                            "No valid volumeTitle found. It seems that " + fieldVolume + " is invalid. Recheck it please.");
+                    logBoth(process.getId(), LogType.ERROR, ABORTION_MESSAGE + process.getId());
+                    return false;
+                }
             }
         }
 
