@@ -3,6 +3,10 @@ title: VLM Export
 identifier: intranda_export_vlm
 published: true
 description: This is a technical documentation for the VLM Export Plugin. It enables the export to a VLM instance.
+keywords:
+    - Goobi workflow
+    - Plugin
+    - Export Plugin
 ---
 ## Introduction
 This documentation describes the installation, configuration and use of the VLM export plugin in Goobi.
